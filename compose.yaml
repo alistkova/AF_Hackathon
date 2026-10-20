@@ -1,0 +1,187 @@
+name: alfa-hack
+
+x-company-env: &company-env
+  COMPANY_ADDR: ":8081"
+  COMPANY_DATABASE_URL: postgres://company_svc:company@postgres:5432/company_db?sslmode=disable
+
+x-content-env: &content-env
+  CONTENT_ADDR: ":8082"
+  CONTENT_DATABASE_URL: postgres://content_svc:content@postgres:5432/content_db?sslmode=disable
+  MINIO_ENDPOINT: http://minio:9000
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio12345}
+  MINIO_BUCKET: raw-documents
+
+x-insight-env: &insight-env
+  INSIGHT_ADDR: ":8083"
+  INSIGHT_DATABASE_URL: postgres://insight_svc:insight@postgres:5432/insight_db?sslmode=disable
+  COMPANY_URL: http://company:8081
+  AGENT_URL: http://agent:8090
+  ANALYZER_MODE: agent
+  AGENT_TIMEOUT: ${AGENT_TIMEOUT:-120s}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    profiles: ["minio"]
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio12345}
+    volumes:
+      - miniodata:/data
+  minio-init:
+    profiles: ["minio"]
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio12345}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do sleep 1; done
+        mc mb --ignore-existing local/raw-documents
+        mc mb --ignore-existing local/exports
+
+  company:
+    build:
+      context: .
+      dockerfile: services/company/Dockerfile
+    image: alfa-hack/company:local
+    environment: *company-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/healthz >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  content:
+    build:
+      context: .
+      dockerfile: services/content/Dockerfile
+    image: alfa-hack/content:local
+    environment: *content-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8082/healthz >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  agent:
+    build:
+      context: services/agent
+      dockerfile: Dockerfile
+    image: alfa-hack/agent:local
+    environment:
+      AGENT_MODE: ${AGENT_MODE:-stub}
+      AGENT_STEP_DELAY: ${AGENT_STEP_DELAY:-350ms}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz')"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  insight:
+    build:
+      context: .
+      dockerfile: services/insight/Dockerfile
+    image: alfa-hack/insight:local
+    environment: *insight-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      agent:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8083/healthz >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    image: alfa-hack/gateway:local
+    environment:
+      GATEWAY_ADDR: ":8080"
+      COMPANY_URL: http://company:8081
+      CONTENT_URL: http://content:8082
+      INSIGHT_URL: http://insight:8083
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-alfa_session}
+      SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me}
+    depends_on:
+      company:
+        condition: service_healthy
+      content:
+        condition: service_healthy
+      insight:
+        condition: service_healthy
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build:
+      context: web
+      dockerfile: Dockerfile
+    image: alfa-hack/web:local
+    depends_on:
+      gateway:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
+  miniodata:

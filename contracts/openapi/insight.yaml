@@ -1,0 +1,59 @@
+openapi: 3.1.0
+info:
+  title: Insight Service API
+  version: 0.1.0
+servers:
+  - url: http://insight:8083
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      responses:
+        "200":
+          description: Ready
+  /api/v1/feed:
+    get:
+      operationId: getFeed
+      parameters:
+        - name: company_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ranked feed
+  /api/v1/insights/jobs:
+    post:
+      operationId: createInsightJob
+      responses:
+        "202":
+          description: Job accepted
+  /api/v1/insights/jobs/{jobId}:
+    get:
+      operationId: getInsightJob
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job state
+  /api/v1/insights/jobs/{jobId}/events:
+    get:
+      operationId: streamInsightJob
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string

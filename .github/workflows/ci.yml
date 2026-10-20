@@ -1,0 +1,90 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Format check
+        run: test -z "$(gofmt -l services internal)"
+      - name: Vet
+        run: go vet ./...
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+          args: --timeout=5m
+      - name: Test
+        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Upload Go coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: coverage.out
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.27.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Install
+        run: pnpm --dir web install --frozen-lockfile
+      - name: Lint
+        run: pnpm --dir web lint
+      - name: Typecheck
+        run: pnpm --dir web typecheck
+      - name: Test
+        run: pnpm --dir web test
+      - name: Build
+        run: pnpm --dir web build
+
+  agent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --frozen --group dev
+      - name: Lint
+        run: uv run ruff format --check && uv run ruff check
+      - name: Test
+        run: uv run pytest -q --maxfail=1
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: [go, web, agent]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start stack
+        run: bash scripts/demo.sh
+      - name: Smoke
+        run: bash scripts/smoke.sh
+      - name: Logs
+        if: failure()
+        run: docker compose logs --no-color --tail=300

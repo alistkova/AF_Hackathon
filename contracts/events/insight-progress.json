@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfa-hack.local/contracts/events/insight-progress.json",
+  "title": "Public insight SSE event payloads",
+  "description": "The data field of SSE events emitted by GET /api/v1/insights/jobs/{jobId}/events.",
+  "oneOf": [
+    { "$ref": "#/$defs/status" },
+    { "$ref": "#/$defs/step" },
+    { "$ref": "#/$defs/result" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": ["type", "job_id", "seq", "ts"],
+      "properties": {
+        "type": { "type": "string" },
+        "job_id": { "type": "string" },
+        "seq": { "type": "integer", "minimum": 1 },
+        "ts": { "type": "string", "format": "date-time" }
+      }
+    },
+    "status": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "required": ["status"],
+          "properties": {
+            "type": { "const": "status" },
+            "status": { "enum": ["queued", "running", "done", "failed"] }
+          }
+        }
+      ]
+    },
+    "step": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "required": ["name", "status"],
+          "properties": {
+            "type": { "const": "step" },
+            "name": { "type": "string" },
+            "status": { "enum": ["running", "done"] },
+            "message": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "result": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "required": ["insight"],
+          "properties": {
+            "type": { "const": "result" },
+            "insight": { "type": "object" }
+          }
+        }
+      ]
+    },
+    "error": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "required": ["code", "message"],
+          "properties": {
+            "type": { "const": "error" },
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "retryable": { "type": "boolean" }
+          }
+        }
+      ]
+    }
+  }
+}

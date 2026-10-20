@@ -1,0 +1,62 @@
+openapi: 3.1.0
+info:
+  title: Content Service API
+  version: 0.1.0
+servers:
+  - url: http://content:8082
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      responses:
+        "200":
+          description: Ready
+  /api/v1/news:
+    get:
+      operationId: listNews
+      description: Returns news items in the format expected by the AI team.
+      responses:
+        "200":
+          description: News items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NewsItem"
+components:
+  schemas:
+    NewsItem:
+      type: object
+      required:
+        - news_id
+        - title
+        - published_at
+        - source_name
+        - source_url
+        - full_text
+        - tags
+        - target_sectors
+      properties:
+        news_id:
+          type: string
+        title:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        source_name:
+          type: string
+        source_url:
+          type: string
+          format: uri
+        full_text:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        target_sectors:
+          type: array
+          items:
+            type: string

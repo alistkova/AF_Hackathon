@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alfa-hack.local/contracts/events/agent-events.json",
+  "title": "Agent SSE event payloads",
+  "description": "The data field of SSE events emitted by POST /v1/analyses.",
+  "oneOf": [
+    { "$ref": "#/$defs/step" },
+    { "$ref": "#/$defs/result" },
+    { "$ref": "#/$defs/error" }
+  ],
+  "$defs": {
+    "step": {
+      "type": "object",
+      "required": ["type", "name", "status"],
+      "properties": {
+        "type": { "const": "step" },
+        "name": { "type": "string" },
+        "status": { "enum": ["running", "done"] },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": ["type", "insight"],
+      "properties": {
+        "type": { "const": "result" },
+        "insight": { "type": "object" },
+        "meta": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "type": "object",
+      "required": ["type", "code", "message"],
+      "properties": {
+        "type": { "const": "error" },
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

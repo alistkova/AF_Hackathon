@@ -1,0 +1,33 @@
+openapi: 3.1.0
+info:
+  title: Company Service API
+  version: 0.1.0
+servers:
+  - url: http://company:8081
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      responses:
+        "200":
+          description: Ready
+  /api/v1/companies:
+    get:
+      operationId: listCompanies
+      responses:
+        "200":
+          description: Company list
+  /api/v1/companies/{companyId}:
+    get:
+      operationId: getCompany
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Company profile
+        "404":
+          description: Not found
