@@ -86,13 +86,13 @@ uv run uvicorn app.main:app --reload --port 8090
 
 ### RAG system development
 
-The agent includes a RAG system for Russian financial news (ALFA_Russian_Steels format) at `services/agent/rag/`.
+The agent includes a RAG system for Russian financial news (ALFA_Russian_Steels format) at `services/agent/app/rag_system/`.
 
 ```bash
 # Install RAG dependencies
 make rag-install
 
-# Build index from PDFs in services/agent/rag/data/
+# Build index from PDFs in services/agent/data/
 make rag-build
 
 # Query the RAG system
@@ -171,7 +171,7 @@ services/company/   companies, people, relations
 services/content/   documents and chunks
 services/insight/   feed, jobs, SSE, agent orchestration
 services/agent/     Python/FastAPI agent
-services/agent/rag/   RAG system for Russian financial news
+services/agent/app/rag_system/   RAG system for Russian financial news
 web/                React + TypeScript + Tailwind
 infra/              Postgres roles/databases, MinIO
 seed/               demo companies and news

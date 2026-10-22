@@ -1,10 +1,11 @@
 import json
+from pathlib import Path
 from typing import Any
 
 import requests
 
 from .config import OLLAMA_BASE_URL, OLLAMA_MODELS
-from .retrieve import retrieve_with_context
+from .retrieve import format_context, retrieve, retrieve_with_context, source_labels
 
 
 def generate_with_ollama(
@@ -57,10 +58,15 @@ RAG_SYSTEM_PROMPT = (
 
 
 def rag_query(
-    question: str, model: str = "qwen", k: int = 5, temperature: float = 0.3
+    question: str,
+    index_dir: str | Path | None = None,
+    model: str = "qwen",
+    k: int = 5,
+    temperature: float = 0.3,
 ) -> dict[str, Any]:
     """Full RAG pipeline: retrieve + generate."""
-    context = retrieve_with_context(question, k=k)
+    docs = retrieve(question, index_dir=index_dir, k=k)
+    context = format_context(docs)
 
     prompt = f"""Контекст из новостей и отчетов:
 {context}
@@ -73,12 +79,24 @@ def rag_query(
         prompt=prompt, model=model, temperature=temperature, system_prompt=RAG_SYSTEM_PROMPT
     )
 
-    return {"question": question, "answer": answer, "context_used": context, "model": model}
+    return {
+        "question": question,
+        "answer": answer,
+        "sources": source_labels(docs),
+        "context_used": context,
+        "model": model,
+    }
 
 
-def rag_stream(question: str, model: str = "qwen", k: int = 5, temperature: float = 0.3):
+def rag_stream(
+    question: str,
+    index_dir: str | Path | None = None,
+    model: str = "qwen",
+    k: int = 5,
+    temperature: float = 0.3,
+):
     """Stream RAG response (generator)."""
-    context = retrieve_with_context(question, k=k)
+    context = retrieve_with_context(question, index_dir=index_dir, k=k)
     model_name = OLLAMA_MODELS.get(model, model)
 
     prompt = f"""Контекст из новостей и отчетов:

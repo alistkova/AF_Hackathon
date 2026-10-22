@@ -1,17 +1,12 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pdfplumber
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from .config import (
-    CHUNK_OVERLAP,
-    CHUNK_SIZE,
-    DATA_DIR,
-    STATE_FILE,
-)
+from .config import CHUNK_OVERLAP, CHUNK_SIZE, DATA_DIR, state_path
 
 # Try to import OCR libraries
 try:
@@ -95,44 +90,47 @@ def chunk_documents(docs: list[Document]) -> list[Document]:
     return chunks
 
 
-def load_state() -> dict:
+def load_state(index_dir: str | Path | None = None) -> dict:
     """Load the processing state file."""
-    if STATE_FILE.exists():
-        with open(STATE_FILE, encoding="utf-8") as f:
+    path = state_path(index_dir)
+    if path.exists():
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     return {"processed_files": {}}
 
 
-def save_state(state: dict):
+def save_state(state: dict, index_dir: str | Path | None = None) -> None:
     """Save the processing state file."""
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
+    path = state_path(index_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def get_new_files(state: dict) -> list[Path]:
+def get_new_files(state: dict, data_dir: str | Path | None = None) -> list[Path]:
     """Get list of PDF files that haven't been processed yet."""
-    pdf_files = list(DATA_DIR.glob("*.pdf"))
+    data_path = Path(data_dir or DATA_DIR)
+    pdf_files = sorted([*data_path.glob("*.pdf"), *data_path.glob("*.PDF")])
     processed = set(state.get("processed_files", {}).keys())
     new_files = [f for f in pdf_files if f.name not in processed]
     return new_files
 
 
-def update_state_add_file(state: dict, pdf_name: str, pages: int):
+def update_state_add_file(state: dict, pdf_name: str, pages: int) -> None:
     """Add a file to the processing state."""
     state.setdefault("processed_files", {})[pdf_name] = {
         "pages": pages,
-        "processed_at": datetime.utcnow().isoformat(),
+        "processed_at": datetime.now(UTC).isoformat(),
     }
-    save_state(state)
 
 
-def ingest_all() -> dict:
+def ingest_all(data_dir: str | Path | None = None, index_dir: str | Path | None = None) -> dict:
     """Full ingestion pipeline: extract, chunk, and return all documents."""
-    state = load_state()
+    state = load_state(index_dir)
     all_chunks = []
     stats = {"new_files": 0, "total_chunks": 0, "skipped": 0}
 
-    new_files = get_new_files(state)
+    new_files = get_new_files(state, data_dir)
     stats["new_files"] = len(new_files)
 
     for pdf_path in new_files:
@@ -145,18 +143,10 @@ def ingest_all() -> dict:
         else:
             stats["skipped"] += 1
 
-    save_state(state)
+    save_state(state, index_dir)
     return {"chunks": all_chunks, "stats": stats}
 
 
-def ingest_pdfs_from_dir(data_dir: str) -> dict:
+def ingest_pdfs_from_dir(data_dir: str | Path, index_dir: str | Path | None = None) -> dict:
     """Ingest PDFs from a specific directory."""
-    from pathlib import Path
-
-    global DATA_DIR
-    old_data_dir = DATA_DIR
-    DATA_DIR = Path(data_dir)
-    try:
-        return ingest_all()
-    finally:
-        DATA_DIR = old_data_dir
+    return ingest_all(data_dir, index_dir)

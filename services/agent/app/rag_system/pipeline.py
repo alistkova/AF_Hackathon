@@ -3,8 +3,8 @@
 from pathlib import Path
 from typing import Any
 
+from .config import DATA_DIR, INDEX_DIR, SCORE_THRESHOLD, vector_store_path
 from .embeddings import (
-    add_chunks_to_store,
     create_vector_store,
     load_vector_store,
     save_vector_store,
@@ -15,30 +15,27 @@ from .retrieve import Retriever
 
 
 def build_index(
-    data_dir: str = "services/agent/rag/data",
-    index_dir: str = "C:/temp/alfa_rag_index",
+    data_dir: str | Path = DATA_DIR,
+    index_dir: str | Path = INDEX_DIR,
     force_rebuild: bool = False,
 ) -> dict[str, Any]:
     """Build or rebuild the vector index from all PDFs in data directory."""
-    import os
-
-    os.environ["RAG_INDEX_DIR"] = index_dir
-    os.environ["RAG_DATA_DIR"] = data_dir
-    result = ingest_pdfs_from_dir(data_dir)
+    result = ingest_pdfs_from_dir(data_dir, index_dir)
     chunks = result["chunks"]
     stats = result["stats"]
 
-    if not chunks and not force_rebuild:
-        existing = load_vector_store(index_dir)
-        if existing:
-            return {
-                "status": "unchanged",
-                "message": "No new files, existing index loaded",
-                "stats": stats,
-            }
+    if not chunks:
+        if not force_rebuild:
+            existing = load_vector_store(index_dir)
+            if existing:
+                return {
+                    "status": "unchanged",
+                    "message": "No new files, existing index loaded",
+                    "stats": stats,
+                }
         return {"status": "empty", "message": "No documents to index", "stats": stats}
 
-    vector_store = create_vector_store(chunks)
+    vector_store = create_vector_store(chunks, index_dir)
     save_vector_store(vector_store, index_dir)
 
     return {
@@ -49,14 +46,11 @@ def build_index(
 
 
 def update_index(
-    data_dir: str = "services/agent/rag/data", index_dir: str = "C:/temp/alfa_rag_index"
+    data_dir: str | Path = DATA_DIR,
+    index_dir: str | Path = INDEX_DIR,
 ) -> dict[str, Any]:
     """Incrementally add new PDFs to existing index."""
-    import os
-
-    os.environ["RAG_INDEX_DIR"] = index_dir
-    os.environ["RAG_DATA_DIR"] = data_dir
-    result = ingest_pdfs_from_dir(data_dir)
+    result = ingest_pdfs_from_dir(data_dir, index_dir)
     chunks = result["chunks"]
     stats = result["stats"]
 
@@ -65,9 +59,10 @@ def update_index(
 
     vector_store = load_vector_store(index_dir)
     if vector_store is None:
-        vector_store = create_vector_store(chunks)
+        vector_store = create_vector_store(chunks, index_dir)
     else:
-        add_chunks_to_store(vector_store, chunks)
+        existing_docs = list(vector_store.docstore._dict.values())
+        vector_store = create_vector_store([*existing_docs, *chunks], index_dir)
 
     save_vector_store(vector_store, index_dir)
 
@@ -80,45 +75,50 @@ def update_index(
 
 def query_index(
     question: str,
-    index_dir: str = "C:/temp/alfa_rag_index",
+    index_dir: str | Path = INDEX_DIR,
     model: str = "gpt-5.6-sol",
     k: int = 5,
     temperature: float = 0.3,
     stream: bool = False,
 ) -> dict[str, Any] | list[str]:
     """Query the RAG system."""
-    import os
-
-    os.environ["RAG_INDEX_DIR"] = index_dir
-
     if stream:
-        return list(rag_stream(question, model, k, temperature))
-    return rag_query(question, model, k, temperature)
+        return list(
+            rag_stream(
+                question,
+                index_dir=index_dir,
+                model=model,
+                k=k,
+                temperature=temperature,
+            )
+        )
+    return rag_query(
+        question,
+        index_dir=index_dir,
+        model=model,
+        k=k,
+        temperature=temperature,
+    )
 
 
-def index_stats(index_dir: str = "C:/temp/alfa_rag_index") -> dict[str, Any]:
+def index_stats(index_dir: str | Path = INDEX_DIR) -> dict[str, Any]:
     """Get system statistics."""
-    import os
-
-    os.environ["RAG_INDEX_DIR"] = index_dir
-
-    state = load_state()
+    state = load_state(index_dir)
     processed = state.get("processed_files", {})
     total_pages = sum(f.get("pages", 0) for f in processed.values())
-    index_exists = Path(index_dir).exists()
     return {
         "processed_files": len(processed),
         "total_pages": total_pages,
         "files": processed,
-        "index_exists": index_exists,
+        "index_dir": str(index_dir),
+        "index_exists": vector_store_path(index_dir).exists(),
     }
 
 
 def get_retriever(
-    index_dir: str = "C:/temp/alfa_rag_index", k: int = 5, score_threshold: float = 0.5
+    index_dir: str | Path = INDEX_DIR,
+    k: int = 5,
+    score_threshold: float = SCORE_THRESHOLD,
 ) -> Retriever:
     """Get a retriever instance for custom use."""
-    import os
-
-    os.environ["RAG_INDEX_DIR"] = index_dir
-    return Retriever(k=k, score_threshold=score_threshold)
+    return Retriever(index_dir=index_dir, k=k, score_threshold=score_threshold)

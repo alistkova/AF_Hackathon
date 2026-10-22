@@ -1,7 +1,12 @@
 from functools import lru_cache
+from pathlib import Path
+from tempfile import gettempdir
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_AGENT_DIR = Path(__file__).resolve().parent.parent
+_TEMP_DIR = Path(gettempdir())
 
 
 class Settings(BaseSettings):
@@ -15,8 +20,8 @@ class Settings(BaseSettings):
     llm_model: str = ""
 
     # RAG settings
-    rag_index_dir: str = "C:/temp/alfa_rag_index"
-    rag_data_dir: str = "services/agent/rag/data"
+    rag_index_dir: str = str(_TEMP_DIR / "alfa_rag_index")
+    rag_data_dir: str = str(_AGENT_DIR / "data")
     rag_use_ocr: bool = False
     rag_tfidf_max_features: int = 5000
 

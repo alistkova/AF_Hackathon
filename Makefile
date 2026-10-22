@@ -12,6 +12,8 @@ WEB_PORT ?= 3000
 GO ?= go
 PNPM ?= pnpm
 UV ?= uv
+RAG_DATA_DIR ?= data
+RAG_INDEX_DIR ?= .rag/index
 
 .PHONY: help bootstrap check-tools infra infra-down migrate seed dev demo demo-reset up down logs psql test lint fmt gen smoke nix-check clean
 
@@ -103,23 +105,22 @@ clean: ## Remove local build artifacts
 
 # RAG system targets
 rag-install: ## Install RAG system Python dependencies
-	cd services/agent/rag && pip install -r requirements.txt
+	cd services/agent && $(UV) sync
 
-rag-build: ## Build RAG index from PDFs in services/agent/rag/data/
-	cd services/agent/rag && python -m rag_system.cli build --data-dir data --index-dir C:/temp/alfa_rag_index
+rag-build: ## Build RAG index from PDFs in services/agent/data/
+	cd services/agent && $(UV) run python -m app.rag_system.cli build --data-dir $(RAG_DATA_DIR) --index-dir $(RAG_INDEX_DIR)
 
 rag-update: ## Incremental update for new PDFs in RAG system
-	cd services/agent/rag && python -m rag_system.cli update --data-dir data --index-dir C:/temp/alfa_rag_index
+	cd services/agent && $(UV) run python -m app.rag_system.cli update --data-dir $(RAG_DATA_DIR) --index-dir $(RAG_INDEX_DIR)
 
 rag-query: ## Query the RAG system (usage: make rag-query Q="your question")
-	cd services/agent/rag && python -m rag_system.cli query --index-dir C:/temp/alfa_rag_index --question "$(Q)"
+	cd services/agent && $(UV) run python -m app.rag_system.cli query --index-dir $(RAG_INDEX_DIR) --model $${MODEL:-qwen} "$(Q)"
 
-rag-watch: ## Watch services/agent/rag/data/ for new PDFs and auto-update
-	cd services/agent/rag && python -m rag_system.cli watch --data-dir data --index-dir C:/temp/alfa_rag_index
+rag-watch: ## Watch services/agent/data/ for new PDFs and auto-update
+	cd services/agent && $(UV) run python -m app.rag_system.cli watch --data-dir $(RAG_DATA_DIR) --index-dir $(RAG_INDEX_DIR)
 
 rag-stats: ## Show RAG index statistics
-	cd services/agent/rag && python -m rag_system.cli stats --index-dir C:/temp/alfa_rag_index
+	cd services/agent && $(UV) run python -m app.rag_system.cli stats --index-dir $(RAG_INDEX_DIR)
 
 rag-clean: ## Remove RAG index and processed files cache
-	rmdir /s /q C:\temp\alfa_rag_index 2>nul || true
-	del services/agent/rag/processed_files.json 2>nul || true
+	cd services/agent && rm -rf $(RAG_INDEX_DIR)

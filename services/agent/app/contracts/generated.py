@@ -6,7 +6,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import AnyUrl, AwareDatetime, BaseModel, confloat
+from pydantic import AnyUrl, AwareDatetime, BaseModel, confloat, conint
 
 
 class Mode(Enum):
@@ -55,6 +55,41 @@ class Insight(BaseModel):
     actions: list[str]
     confidence: confloat(ge=0.0, le=1.0)
     meta: dict[str, Any] | None = None
+
+
+class RagBuildIndexRequest(BaseModel):
+    data_dir: str | None = None
+    index_dir: str | None = None
+
+
+class RagUpdateIndexRequest(BaseModel):
+    data_dir: str | None = None
+    index_dir: str | None = None
+
+
+class RagQueryRequest(BaseModel):
+    question: str
+    index_dir: str | None = None
+    model: str | None = 'gpt-5.6-sol'
+    top_k: conint(ge=1) | None = 5
+
+
+class RagQueryResponse(BaseModel):
+    answer: str
+    sources: list[str]
+
+
+class RagJobAccepted(BaseModel):
+    status: str
+    message: str
+
+
+class RagStats(BaseModel):
+    processed_files: int
+    total_pages: int
+    files: dict[str, dict[str, Any]]
+    index_dir: str
+    index_exists: bool
 
 
 class Error(BaseModel):

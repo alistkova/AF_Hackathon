@@ -47,6 +47,78 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /v1/rag/build-index:
+    post:
+      operationId: buildRagIndex
+      description: Starts a background index build from PDF files.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagBuildIndexRequest"
+      responses:
+        "200":
+          description: Index build started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagJobAccepted"
+  /v1/rag/update-index:
+    post:
+      operationId: updateRagIndex
+      description: Starts a background incremental index update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagUpdateIndexRequest"
+      responses:
+        "200":
+          description: Index update started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagJobAccepted"
+  /v1/rag/query:
+    post:
+      operationId: queryRagIndex
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagQueryRequest"
+      responses:
+        "200":
+          description: RAG answer with source labels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagQueryResponse"
+        "404":
+          description: RAG index not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/rag/stats:
+    get:
+      operationId: getRagStats
+      parameters:
+        - name: index_dir
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: RAG index statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagStats"
 components:
   schemas:
     AnalysisRequest:
@@ -170,6 +242,70 @@ components:
         meta:
           type: object
           additionalProperties: true
+    RagBuildIndexRequest:
+      type: object
+      properties:
+        data_dir:
+          type: string
+        index_dir:
+          type: string
+    RagUpdateIndexRequest:
+      type: object
+      properties:
+        data_dir:
+          type: string
+        index_dir:
+          type: string
+    RagQueryRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+        index_dir:
+          type: string
+        model:
+          type: string
+          default: gpt-5.6-sol
+        top_k:
+          type: integer
+          default: 5
+          minimum: 1
+    RagQueryResponse:
+      type: object
+      required: [answer, sources]
+      properties:
+        answer:
+          type: string
+        sources:
+          type: array
+          items:
+            type: string
+    RagJobAccepted:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+    RagStats:
+      type: object
+      required: [processed_files, total_pages, files, index_dir, index_exists]
+      properties:
+        processed_files:
+          type: integer
+        total_pages:
+          type: integer
+        files:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+        index_dir:
+          type: string
+        index_exists:
+          type: boolean
     Error:
       type: object
       required: [code, message]

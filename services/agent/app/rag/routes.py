@@ -1,22 +1,26 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
+from app.config import get_settings
+
 router = APIRouter()
+settings = get_settings()
 
 
 class BuildIndexRequest(BaseModel):
-    data_dir: str = "services/agent/rag/data"
-    index_dir: str = "C:/temp/alfa_rag_index"
+    data_dir: str = settings.rag_data_dir
+    index_dir: str = settings.rag_index_dir
 
 
 class UpdateIndexRequest(BaseModel):
-    data_dir: str = "services/agent/rag/data"
-    index_dir: str = "C:/temp/alfa_rag_index"
+    data_dir: str = settings.rag_data_dir
+    index_dir: str = settings.rag_index_dir
 
 
 class QueryRequest(BaseModel):
     question: str
-    index_dir: str = "C:/temp/alfa_rag_index"
+    index_dir: str = settings.rag_index_dir
+    model: str = "gpt-5.6-sol"
     top_k: int = 5
 
 
@@ -49,18 +53,23 @@ async def query(payload: QueryRequest):
     from app.rag_system.pipeline import query_index
 
     try:
-        answer, sources = query_index(payload.question, payload.index_dir, payload.top_k)
+        result = query_index(
+            payload.question,
+            index_dir=payload.index_dir,
+            model=payload.model,
+            k=payload.top_k,
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return QueryResponse(answer=answer, sources=sources)
+    return QueryResponse(answer=result["answer"], sources=result["sources"])
 
 
 @router.get("/stats")
-async def stats(index_dir: str = "C:/temp/alfa_rag_index"):
+async def stats(index_dir: str | None = None):
     """Show RAG index statistics."""
     from app.rag_system.pipeline import index_stats
 
     try:
-        return index_stats(index_dir)
+        return index_stats(index_dir or settings.rag_index_dir)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -8,8 +8,8 @@ from pathlib import Path
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-from .config import DATA_DIR
-from .pipeline import incremental_update
+from .config import DATA_DIR, INDEX_DIR
+from .pipeline import update_index
 
 
 class PDFHandler(FileSystemEventHandler):
@@ -42,17 +42,29 @@ class PDFHandler(FileSystemEventHandler):
         self.timer.start()
 
 
-def watch_directory(callback=None, debounce=2.0):
+def watch_directory(
+    callback=None,
+    data_dir: str | Path = DATA_DIR,
+    index_dir: str | Path = INDEX_DIR,
+    debounce: float = 2.0,
+) -> None:
     """Start watching the data directory for new/modified PDFs."""
     if callback is None:
-        callback = incremental_update
+
+        def _default_callback() -> None:
+            update_index(data_dir=data_dir, index_dir=index_dir)
+
+        callback = _default_callback
+
+    data_path = Path(data_dir)
+    data_path.mkdir(parents=True, exist_ok=True)
 
     event_handler = PDFHandler(callback, debounce)
     observer = Observer()
-    observer.schedule(event_handler, str(DATA_DIR), recursive=False)
+    observer.schedule(event_handler, str(data_path), recursive=False)
     observer.start()
 
-    print(f"Watching {DATA_DIR} for PDF changes...")
+    print(f"Watching {data_dir} for PDF changes...")
     try:
         while True:
             time.sleep(1)
