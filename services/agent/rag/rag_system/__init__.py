@@ -1,4 +1,5 @@
 """RAG system for Russian news/newsletter PDFs with local LLM integration."""
+
 from .config import *
 from .ingest import ingest_all
 from .pipeline import build_index, incremental_update, query, get_retriever, get_stats

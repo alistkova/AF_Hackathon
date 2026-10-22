@@ -7,7 +7,9 @@ from .config import VECTOR_STORE_PATH, TOP_K, SCORE_THRESHOLD
 from .embeddings import get_embeddings, load_vector_store, search as search_embeddings
 
 
-def retrieve(query: str, k: int = TOP_K, score_threshold: float = SCORE_THRESHOLD) -> list[Document]:
+def retrieve(
+    query: str, k: int = TOP_K, score_threshold: float = SCORE_THRESHOLD
+) -> list[Document]:
     """Retrieve relevant documents for a query."""
     vector_store = load_vector_store()
     if vector_store is None:
@@ -15,7 +17,9 @@ def retrieve(query: str, k: int = TOP_K, score_threshold: float = SCORE_THRESHOL
     return search_embeddings(vector_store, query, k=k, score_threshold=score_threshold)
 
 
-def retrieve_with_context(query: str, k: int = TOP_K, score_threshold: float = SCORE_THRESHOLD) -> str:
+def retrieve_with_context(
+    query: str, k: int = TOP_K, score_threshold: float = SCORE_THRESHOLD
+) -> str:
     """Retrieve and format as context string for LLM."""
     docs = retrieve(query, k, score_threshold)
     if not docs:
@@ -50,7 +54,9 @@ class Retriever:
     def invoke(self, query: str) -> list[Document]:
         if self.vector_store is None:
             return []
-        return search_embeddings(self.vector_store, query, k=self.k, score_threshold=self.score_threshold)
+        return search_embeddings(
+            self.vector_store, query, k=self.k, score_threshold=self.score_threshold
+        )
 
     def get_context(self, query: str) -> str:
         docs = self.invoke(query)

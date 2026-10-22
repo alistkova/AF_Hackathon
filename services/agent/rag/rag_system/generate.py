@@ -12,7 +12,7 @@ def generate_with_ollama(
     model: str = "qwen",
     temperature: float = 0.3,
     max_tokens: int = 2048,
-    system_prompt: Optional[str] = None
+    system_prompt: Optional[str] = None,
 ) -> str:
     """Generate response using Ollama API."""
     model_name = OLLAMA_MODELS.get(model, model)
@@ -27,15 +27,11 @@ def generate_with_ollama(
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
-        "stream": False
+        "stream": False,
     }
 
     try:
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json=payload,
-            timeout=120
-        )
+        response = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=120)
         response.raise_for_status()
         data = response.json()
         return data.get("message", {}).get("content", "")
@@ -59,10 +55,7 @@ RAG_SYSTEM_PROMPT = """Ты — эксперт по анализу новост�
 
 
 def rag_query(
-    question: str,
-    model: str = "qwen",
-    k: int = 5,
-    temperature: float = 0.3
+    question: str, model: str = "qwen", k: int = 5, temperature: float = 0.3
 ) -> Dict[str, Any]:
     """Full RAG pipeline: retrieve + generate."""
     context = retrieve_with_context(question, k=k)
@@ -75,26 +68,13 @@ def rag_query(
 Дай подробный ответ с инсайтами, опираясь только на контекст выше."""
 
     answer = generate_with_ollama(
-        prompt=prompt,
-        model=model,
-        temperature=temperature,
-        system_prompt=RAG_SYSTEM_PROMPT
+        prompt=prompt, model=model, temperature=temperature, system_prompt=RAG_SYSTEM_PROMPT
     )
 
-    return {
-        "question": question,
-        "answer": answer,
-        "context_used": context,
-        "model": model
-    }
+    return {"question": question, "answer": answer, "context_used": context, "model": model}
 
 
-def rag_stream(
-    question: str,
-    model: str = "qwen",
-    k: int = 5,
-    temperature: float = 0.3
-):
+def rag_stream(question: str, model: str = "qwen", k: int = 5, temperature: float = 0.3):
     """Stream RAG response (generator)."""
     context = retrieve_with_context(question, k=k)
     model_name = OLLAMA_MODELS.get(model, model)
@@ -108,7 +88,7 @@ def rag_stream(
 
     messages = [
         {"role": "system", "content": RAG_SYSTEM_PROMPT},
-        {"role": "user", "content": prompt}
+        {"role": "user", "content": prompt},
     ]
 
     payload = {
@@ -116,15 +96,12 @@ def rag_stream(
         "messages": messages,
         "temperature": temperature,
         "max_tokens": 2048,
-        "stream": True
+        "stream": True,
     }
 
     try:
         with requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json=payload,
-            stream=True,
-            timeout=120
+            f"{OLLAMA_BASE_URL}/api/chat", json=payload, stream=True, timeout=120
         ) as response:
             response.raise_for_status()
             for line in response.iter_lines():

@@ -7,9 +7,15 @@ import pdfplumber
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
-from .config import DATA_DIR, INDEX_DIR, STATE_FILE, CHUNK_SIZE, CHUNK_OVERLAP, TOP_K, SCORE_THRESHOLD
-
-
+from .config import (
+    DATA_DIR,
+    INDEX_DIR,
+    STATE_FILE,
+    CHUNK_SIZE,
+    CHUNK_OVERLAP,
+    TOP_K,
+    SCORE_THRESHOLD,
+)
 
 
 # Try to import OCR libraries
@@ -17,6 +23,7 @@ try:
     import pytesseract
     from PIL import Image
     import pymupdf
+
     OCR_AVAILABLE = True
 except ImportError:
     OCR_AVAILABLE = False
@@ -32,15 +39,16 @@ def extract_pdf_text(pdf_path: Path) -> list[Document]:
             if text and text.strip():
                 # Check if text is mojibake (mostly replacement chars)
                 if _is_mojibake(text):
-                    print(f"  Page {i+1}: Detected mojibake, attempting OCR...")
+                    print(f"  Page {i + 1}: Detected mojibake, attempting OCR...")
                     text = _extract_with_ocr(pdf_path, i)
                 if text and text.strip():
                     # Clean up mojibake markers and normalize
                     text = text.replace("\n", " ").strip()
-                    docs.append(Document(
-                        page_content=text,
-                        metadata={"source": pdf_path.name, "page": i + 1}
-                    ))
+                    docs.append(
+                        Document(
+                            page_content=text, metadata={"source": pdf_path.name, "page": i + 1}
+                        )
+                    )
         pdf.close()
     except Exception as e:
         print(f"Warning: Could not extract text from {pdf_path.name}: {e}")
@@ -81,19 +89,14 @@ def _extract_with_ocr(pdf_path: Path, page_num: int) -> str:
 def chunk_documents(docs: list[Document]) -> list[Document]:
     """Split documents into chunks for embedding."""
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
-        separators=["\n\n", "\n", " ", ""]
+        chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP, separators=["\n\n", "\n", " ", ""]
     )
     chunks = []
     for doc in docs:
         chunked = splitter.split_text(doc.page_content)
         for j, chunk in enumerate(chunked):
             if chunk.strip():
-                chunks.append(Document(
-                    page_content=chunk,
-                    metadata={**doc.metadata, "chunk": j}
-                ))
+                chunks.append(Document(page_content=chunk, metadata={**doc.metadata, "chunk": j}))
     return chunks
 
 
@@ -123,7 +126,7 @@ def update_state_add_file(state: dict, pdf_name: str, pages: int):
     """Add a file to the processing state."""
     state.setdefault("processed_files", {})[pdf_name] = {
         "pages": pages,
-        "processed_at": datetime.utcnow().isoformat()
+        "processed_at": datetime.utcnow().isoformat(),
     }
     save_state(state)
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """File watcher for automatic incremental updates."""
+
 import time
 import threading
 from pathlib import Path

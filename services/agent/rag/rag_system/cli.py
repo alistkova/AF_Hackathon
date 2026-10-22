@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """CLI for the RAG system."""
+
 import sys
 import argparse
 import json
@@ -14,7 +15,9 @@ def main():
 
     # Build index
     build_parser = subparsers.add_parser("build", help="Build or rebuild the full index")
-    build_parser.add_argument("--force", action="store_true", help="Force rebuild even if index exists")
+    build_parser.add_argument(
+        "--force", action="store_true", help="Force rebuild even if index exists"
+    )
 
     # Incremental update
     subparsers.add_parser("update", help="Incrementally update index with new PDFs")
@@ -22,7 +25,12 @@ def main():
     # Query
     query_parser = subparsers.add_parser("query", help="Query the RAG system")
     query_parser.add_argument("question", type=str, help="Question to ask")
-    query_parser.add_argument("--model", default="qwen", choices=["gemma", "gpt-5.6-sol", "qwen", "deepseek", "qwen_vl", "kimi"], help="LLM model to use")
+    query_parser.add_argument(
+        "--model",
+        default="qwen",
+        choices=["gemma", "gpt-5.6-sol", "qwen", "deepseek", "qwen_vl", "kimi"],
+        help="LLM model to use",
+    )
     query_parser.add_argument("--k", type=int, default=5, help="Number of chunks to retrieve")
     query_parser.add_argument("--temp", type=float, default=0.3, help="Temperature")
     query_parser.add_argument("--stream", action="store_true", help="Stream the response")

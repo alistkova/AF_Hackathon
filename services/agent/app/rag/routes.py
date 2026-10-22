@@ -35,6 +35,7 @@ class QueryResponse(BaseModel):
 async def build_index(payload: BuildIndexRequest, background: BackgroundTasks):
     """Build RAG index from PDFs."""
     from pipeline import build_index as build_index_fn
+
     background.add_task(build_index_fn, payload.data_dir, payload.index_dir)
     return {"status": "started", "message": "RAG index build started in background"}
 
@@ -43,6 +44,7 @@ async def build_index(payload: BuildIndexRequest, background: BackgroundTasks):
 async def update_index(payload: UpdateIndexRequest, background: BackgroundTasks):
     """Incremental update for new PDFs."""
     from pipeline import update_index as update_index_fn
+
     background.add_task(update_index_fn, payload.data_dir, payload.index_dir)
     return {"status": "started", "message": "RAG index update started in background"}
 
@@ -51,6 +53,7 @@ async def update_index(payload: UpdateIndexRequest, background: BackgroundTasks)
 async def query(payload: QueryRequest):
     """Semantic search + LLM generation over the RAG index."""
     from pipeline import query_index
+
     try:
         answer, sources = query_index(payload.question, payload.index_dir, payload.top_k)
     except FileNotFoundError as exc:
@@ -62,6 +65,7 @@ async def query(payload: QueryRequest):
 async def stats(index_dir: str = "C:/temp/alfa_rag_index"):
     """Show RAG index statistics."""
     from pipeline import index_stats
+
     try:
         return index_stats(index_dir)
     except FileNotFoundError as exc:
