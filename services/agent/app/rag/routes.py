@@ -1,11 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
-import sys
-from pathlib import Path
-
-# Add rag_system to Python path
-RAG_SYSTEM_PATH = Path(__file__).parent.parent.parent / "rag" / "rag_system"
-sys.path.insert(0, str(RAG_SYSTEM_PATH))
 
 router = APIRouter()
 
@@ -34,7 +28,7 @@ class QueryResponse(BaseModel):
 @router.post("/build-index")
 async def build_index(payload: BuildIndexRequest, background: BackgroundTasks):
     """Build RAG index from PDFs."""
-    from pipeline import build_index as build_index_fn
+    from app.rag_system.pipeline import build_index as build_index_fn
 
     background.add_task(build_index_fn, payload.data_dir, payload.index_dir)
     return {"status": "started", "message": "RAG index build started in background"}
@@ -43,7 +37,7 @@ async def build_index(payload: BuildIndexRequest, background: BackgroundTasks):
 @router.post("/update-index")
 async def update_index(payload: UpdateIndexRequest, background: BackgroundTasks):
     """Incremental update for new PDFs."""
-    from pipeline import update_index as update_index_fn
+    from app.rag_system.pipeline import update_index as update_index_fn
 
     background.add_task(update_index_fn, payload.data_dir, payload.index_dir)
     return {"status": "started", "message": "RAG index update started in background"}
@@ -52,7 +46,7 @@ async def update_index(payload: UpdateIndexRequest, background: BackgroundTasks)
 @router.post("/query", response_model=QueryResponse)
 async def query(payload: QueryRequest):
     """Semantic search + LLM generation over the RAG index."""
-    from pipeline import query_index
+    from app.rag_system.pipeline import query_index
 
     try:
         answer, sources = query_index(payload.question, payload.index_dir, payload.top_k)
@@ -64,7 +58,7 @@ async def query(payload: QueryRequest):
 @router.get("/stats")
 async def stats(index_dir: str = "C:/temp/alfa_rag_index"):
     """Show RAG index statistics."""
-    from pipeline import index_stats
+    from app.rag_system.pipeline import index_stats
 
     try:
         return index_stats(index_dir)

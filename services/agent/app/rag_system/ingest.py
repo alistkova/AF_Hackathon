@@ -152,3 +152,16 @@ def ingest_all() -> dict:
 
     save_state(state)
     return {"chunks": all_chunks, "stats": stats}
+
+
+def ingest_pdfs_from_dir(data_dir: str) -> dict:
+    """Ingest PDFs from a specific directory."""
+    from pathlib import Path
+
+    global DATA_DIR
+    old_data_dir = DATA_DIR
+    DATA_DIR = Path(data_dir)
+    try:
+        return ingest_all()
+    finally:
+        DATA_DIR = old_data_dir
