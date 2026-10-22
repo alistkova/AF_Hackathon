@@ -2,6 +2,7 @@ openapi: 3.1.0
 info:
   title: Company Service API
   version: 0.1.0
+  description: Company profiles and their business context.
 servers:
   - url: http://company:8081
 paths:
@@ -11,23 +12,99 @@ paths:
       responses:
         "200":
           description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+                  service:
+                    type: string
+                    const: company
   /api/v1/companies:
     get:
       operationId: listCompanies
       responses:
         "200":
-          description: Company list
+          description: Company list ordered by name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyList"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/v1/companies/{companyId}:
     get:
       operationId: getCompany
       parameters:
-        - name: companyId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: "#/components/parameters/CompanyId"
       responses:
         "200":
           description: Company profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
         "404":
-          description: Not found
+          description: Company not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  parameters:
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    InternalError:
+      description: Company service is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Company:
+      type: object
+      required: [id, name, inn, industry, region, description, created_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        inn:
+          type: string
+        industry:
+          type: string
+        region:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CompanyList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Company"
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

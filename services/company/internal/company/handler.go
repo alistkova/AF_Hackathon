@@ -1,6 +1,7 @@
 package company
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -8,12 +9,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type Store interface {
+	List(ctx context.Context) ([]Company, error)
+	Get(ctx context.Context, id string) (Company, error)
+}
+
 type Handler struct {
-	repo   *Repository
+	repo   Store
 	logger *slog.Logger
 }
 
-func NewHandler(repo *Repository, logger *slog.Logger) *Handler {
+func NewHandler(repo Store, logger *slog.Logger) *Handler {
 	return &Handler{repo: repo, logger: logger}
 }
 

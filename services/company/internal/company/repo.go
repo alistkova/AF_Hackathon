@@ -2,10 +2,13 @@ package company
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+var ErrNotFound = errors.New("company not found")
 
 type Repository struct {
 	pool *pgxpool.Pool
@@ -44,6 +47,9 @@ func (r *Repository) Get(ctx context.Context, id string) (Company, error) {
 		FROM companies
 		WHERE id = $1
 	`, id).Scan(&item.ID, &item.Name, &item.INN, &item.Industry, &item.Region, &item.Description, &item.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Company{}, ErrNotFound
+	}
 	if err != nil {
 		return Company{}, err
 	}
@@ -76,5 +82,5 @@ func (r *Repository) Upsert(ctx context.Context, items []Company) error {
 }
 
 func IsNotFound(err error) bool {
-	return err == pgx.ErrNoRows
+	return errors.Is(err, ErrNotFound)
 }

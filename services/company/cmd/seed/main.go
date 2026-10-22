@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/csv"
 	"flag"
 	"log/slog"
 	"os"
@@ -20,7 +19,14 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	ctx := context.Background()
 
-	items, err := readCompanies(*file)
+	f, err := os.Open(*file)
+	if err != nil {
+		logger.Error("open companies", "error", err, "file", *file)
+		os.Exit(1)
+	}
+	defer func() { _ = f.Close() }()
+
+	items, err := company.ParseCSV(f)
 	if err != nil {
 		logger.Error("read companies", "error", err, "file", *file)
 		os.Exit(1)
@@ -44,36 +50,4 @@ func main() {
 	}
 
 	logger.Info("companies seeded", "count", len(items))
-}
-
-func readCompanies(path string) ([]company.Company, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-
-	rows, err := csv.NewReader(f).ReadAll()
-	if err != nil {
-		return nil, err
-	}
-	if len(rows) < 2 {
-		return []company.Company{}, nil
-	}
-
-	items := make([]company.Company, 0, len(rows)-1)
-	for _, row := range rows[1:] {
-		if len(row) < 6 {
-			continue
-		}
-		items = append(items, company.Company{
-			ID:          row[0],
-			Name:        row[1],
-			INN:         row[2],
-			Industry:    row[3],
-			Region:      row[4],
-			Description: row[5],
-		})
-	}
-	return items, nil
 }
