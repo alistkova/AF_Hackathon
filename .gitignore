@@ -1,3 +1,4 @@
+# Go/Node/Python monorepo
 .env
 .env.*
 !.env.example
@@ -27,3 +28,12 @@ __pycache__/
 data/
 pgdata/
 miniodata/
+
+# RAG system
+services/agent/rag/data/*.pdf
+services/agent/rag/data/*.PDF
+C:/temp/alfa_rag_index/
+processed_files.json
+*.faiss
+*.pkl
+*.npy

@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = ""
 
+    # RAG settings
+    rag_index_dir: str = "C:/temp/alfa_rag_index"
+    rag_data_dir: str = "services/agent/rag/data"
+    rag_use_ocr: bool = False
+    rag_tfidf_max_features: int = 5000
+
     def step_delay(self) -> float:
         raw = self.agent_step_delay.strip().lower()
         if raw.endswith("ms"):

@@ -18,6 +18,7 @@ Gateway (Go/Gin)
 ```
 
 One PostgreSQL instance with separate databases and roles per service. Redis is provisioned for later queues; MinIO is an optional Compose profile for raw documents. The agent is stateless: insight owns retrieval, persistence, retries and the browser SSE stream.
+The agent includes a RAG system for Russian financial news PDFs with incremental updates.
 
 ## Quick start
 
@@ -83,6 +84,29 @@ uv run uvicorn app.main:app --reload --port 8090
 
 `AGENT_MODE=stub` works without an LLM. Set `AGENT_MODE=live`, `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL` for an OpenAI-compatible endpoint.
 
+### RAG system development
+
+The agent includes a RAG system for Russian financial news (ALFA_Russian_Steels format) at `services/agent/rag/`.
+
+```bash
+# Install RAG dependencies
+make rag-install
+
+# Build index from PDFs in services/agent/rag/data/
+make rag-build
+
+# Query the RAG system
+make rag-query Q="ваш вопрос"
+
+# Incremental update for new PDFs
+make rag-update
+
+# Show index statistics
+make rag-stats
+```
+
+Requires Ollama with models (gpt-5.6-sol, DeepSeek-V4.1-Flash, etc.). Set `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env`.
+
 ## Commands
 
 ```bash
@@ -96,6 +120,14 @@ make test        # Go, web and agent tests
 make lint        # gofmt, golangci-lint, ESLint, TypeScript, ruff
 make smoke       # end-to-end SSE smoke test
 make gen         # generate contract types
+
+# RAG system
+make rag-install  # install RAG dependencies
+make rag-build    # build index from PDFs
+make rag-update   # incremental update
+make rag-query Q="question"  # query RAG
+make rag-stats    # index statistics
+make rag-clean    # remove index and cache
 ```
 
 ## Service boundaries
@@ -139,6 +171,7 @@ services/company/   companies, people, relations
 services/content/   documents and chunks
 services/insight/   feed, jobs, SSE, agent orchestration
 services/agent/     Python/FastAPI agent
+services/agent/rag/   RAG system for Russian financial news
 web/                React + TypeScript + Tailwind
 infra/              Postgres roles/databases, MinIO
 seed/               demo companies and news
