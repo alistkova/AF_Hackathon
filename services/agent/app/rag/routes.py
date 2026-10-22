@@ -51,7 +51,7 @@ async def query(payload: QueryRequest):
     try:
         answer, sources = query_index(payload.question, payload.index_dir, payload.top_k)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return QueryResponse(answer=answer, sources=sources)
 
 
@@ -63,4 +63,4 @@ async def stats(index_dir: str = "C:/temp/alfa_rag_index"):
     try:
         return index_stats(index_dir)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

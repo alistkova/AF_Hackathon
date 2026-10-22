@@ -1,10 +1,10 @@
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain_core.documents import Document
-
 import os
 import pickle
 from pathlib import Path
+
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from .config import EMBEDDING_MODEL, VECTOR_STORE_PATH
 

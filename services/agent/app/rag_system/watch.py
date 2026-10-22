@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """File watcher for automatic incremental updates."""
 
-import time
 import threading
+import time
 from pathlib import Path
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 
-from .pipeline import incremental_update
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
 from .config import DATA_DIR
+from .pipeline import incremental_update
 
 
 class PDFHandler(FileSystemEventHandler):

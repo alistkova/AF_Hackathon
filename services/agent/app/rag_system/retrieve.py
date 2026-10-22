@@ -1,10 +1,8 @@
-import os
-from typing import Optional
-from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
-from .config import VECTOR_STORE_PATH, TOP_K, SCORE_THRESHOLD
-from .embeddings import get_embeddings, load_vector_store, search as search_embeddings
+from .config import SCORE_THRESHOLD, TOP_K
+from .embeddings import load_vector_store
+from .embeddings import search as search_embeddings
 
 
 def retrieve(

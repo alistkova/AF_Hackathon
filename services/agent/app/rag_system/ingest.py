@@ -1,28 +1,23 @@
-import os
 import json
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 import pdfplumber
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from .config import (
-    DATA_DIR,
-    INDEX_DIR,
-    STATE_FILE,
-    CHUNK_SIZE,
     CHUNK_OVERLAP,
-    TOP_K,
-    SCORE_THRESHOLD,
+    CHUNK_SIZE,
+    DATA_DIR,
+    STATE_FILE,
 )
-
 
 # Try to import OCR libraries
 try:
+    import pymupdf
     import pytesseract
     from PIL import Image
-    import pymupdf
 
     OCR_AVAILABLE = True
 except ImportError:
@@ -103,7 +98,7 @@ def chunk_documents(docs: list[Document]) -> list[Document]:
 def load_state() -> dict:
     """Load the processing state file."""
     if STATE_FILE.exists():
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
+        with open(STATE_FILE, encoding="utf-8") as f:
             return json.load(f)
     return {"processed_files": {}}
 

@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """CLI for the RAG system."""
 
-import sys
 import argparse
 import json
-from pathlib import Path
 
-from .pipeline import build_index, incremental_update, query, get_stats
+from .pipeline import build_index, get_stats, incremental_update, query
 
 
 def main():

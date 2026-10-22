@@ -1,24 +1,24 @@
 """Main RAG pipeline orchestrating ingestion, indexing, and querying."""
 
-from typing import Dict, Any, List
 from pathlib import Path
+from typing import Any
 
-from .ingest import ingest_all, load_state, ingest_pdfs_from_dir
 from .embeddings import (
-    create_vector_store,
-    save_vector_store,
-    load_vector_store,
     add_chunks_to_store,
+    create_vector_store,
+    load_vector_store,
+    save_vector_store,
 )
-from .retrieve import retrieve, retrieve_with_context, Retriever
-from .generate import rag_query, rag_stream, generate_with_ollama
+from .generate import rag_query, rag_stream
+from .ingest import ingest_pdfs_from_dir, load_state
+from .retrieve import Retriever
 
 
 def build_index(
     data_dir: str = "services/agent/rag/data",
     index_dir: str = "C:/temp/alfa_rag_index",
     force_rebuild: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build or rebuild the vector index from all PDFs in data directory."""
     import os
 
@@ -50,7 +50,7 @@ def build_index(
 
 def update_index(
     data_dir: str = "services/agent/rag/data", index_dir: str = "C:/temp/alfa_rag_index"
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Incrementally add new PDFs to existing index."""
     import os
 
@@ -85,24 +85,22 @@ def query_index(
     k: int = 5,
     temperature: float = 0.3,
     stream: bool = False,
-) -> Dict[str, Any] | List[str]:
+) -> dict[str, Any] | list[str]:
     """Query the RAG system."""
     import os
 
     os.environ["RAG_INDEX_DIR"] = index_dir
-    from .generate import rag_query, rag_stream
 
     if stream:
         return list(rag_stream(question, model, k, temperature))
     return rag_query(question, model, k, temperature)
 
 
-def index_stats(index_dir: str = "C:/temp/alfa_rag_index") -> Dict[str, Any]:
+def index_stats(index_dir: str = "C:/temp/alfa_rag_index") -> dict[str, Any]:
     """Get system statistics."""
     import os
 
     os.environ["RAG_INDEX_DIR"] = index_dir
-    from .config import VECTOR_STORE_PATH
 
     state = load_state()
     processed = state.get("processed_files", {})

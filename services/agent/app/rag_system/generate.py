@@ -1,6 +1,6 @@
-import os
 import json
-from typing import Optional, List, Dict, Any
+from typing import Any
+
 import requests
 
 from .config import OLLAMA_BASE_URL, OLLAMA_MODELS
@@ -12,7 +12,7 @@ def generate_with_ollama(
     model: str = "qwen",
     temperature: float = 0.3,
     max_tokens: int = 2048,
-    system_prompt: Optional[str] = None,
+    system_prompt: str | None = None,
 ) -> str:
     """Generate response using Ollama API."""
     model_name = OLLAMA_MODELS.get(model, model)
@@ -41,22 +41,24 @@ def generate_with_ollama(
         return f"Error generating response: {e}"
 
 
-RAG_SYSTEM_PROMPT = """Ты — эксперт по анализу новостей и финансовых отчетов компании АЛЬФА-Банк и смежных отраслей (сталь, металлургия, сырьевые рынки).
-
-Твоя задача: на основе предоставленного контекста из новостей и отчетов дать качественный инсайт, вывод или ответ на вопрос пользователя.
-
-Правила:
-1. Используй ТОЛЬКО информацию из предоставленного контекста
-2. Если в контексте нет ответа — честно скажи об этом
-3. Цитируй источники в формате [Source N]
-4. Будь лаконичен, но глубок в анализе
-5. Выделяй ключевые метрики, тренды, риски и возможности
-6. Отвечай на русском языке"""
+RAG_SYSTEM_PROMPT = (
+    "Ты — эксперт по анализу новостей и финансовых отчетов компании АЛЬФА-Банк "
+    "и смежных отраслей (сталь, металлургия, сырьевые рынки).\n\n"
+    "Твоя задача: на основе предоставленного контекста из новостей и отчетов "
+    "дать качественный инсайт, вывод или ответ на вопрос пользователя.\n\n"
+    "Правила:\n"
+    "1. Используй ТОЛЬКО информацию из предоставленного контекста\n"
+    "2. Если в контексте нет ответа — честно скажи об этом\n"
+    "3. Цитируй источники в формате [Source N]\n"
+    "4. Будь лаконичен, но глубок в анализе\n"
+    "5. Выделяй ключевые метрики, тренды, риски и возможности\n"
+    "6. Отвечай на русском языке"
+)
 
 
 def rag_query(
     question: str, model: str = "qwen", k: int = 5, temperature: float = 0.3
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Full RAG pipeline: retrieve + generate."""
     context = retrieve_with_context(question, k=k)
 
