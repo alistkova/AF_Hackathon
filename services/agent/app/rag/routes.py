@@ -1,7 +1,8 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config import get_settings
+from app.rag_system.config import DEFAULT_MODEL
 from app.rag_system.pipeline import (
     build_index,
     index_stats,
@@ -10,9 +11,15 @@ from app.rag_system.pipeline import (
     search_chunks,
     update_index,
 )
+from app.rag_system.store import ContentStoreError
 
 router = APIRouter()
 settings = get_settings()
+
+
+def _content_error(exc: ContentStoreError) -> HTTPException:
+    status_code = 400 if exc.status_code and 400 <= exc.status_code < 500 else 503
+    return HTTPException(status_code=status_code, detail=str(exc))
 
 
 class BuildIndexRequest(BaseModel):
@@ -27,9 +34,8 @@ class UpdateIndexRequest(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str
-    index_dir: str = settings.rag_index_dir
-    model: str = "qwen"
-    top_k: int = 5
+    model: str = DEFAULT_MODEL
+    top_k: int = Field(default=5, ge=1)
     company_id: str | None = None
     sector: str | None = None
     published_after: str | None = None
@@ -43,8 +49,7 @@ class QueryResponse(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
-    index_dir: str = settings.rag_index_dir
-    top_k: int = 10
+    top_k: int = Field(default=10, ge=1)
     company_id: str | None = None
     sector: str | None = None
     published_after: str | None = None
@@ -58,8 +63,7 @@ class SearchResponse(BaseModel):
 
 
 class ListChunksRequest(BaseModel):
-    index_dir: str = settings.rag_index_dir
-    top_k: int = 100
+    top_k: int = Field(default=100, ge=1)
     company_id: str | None = None
     sector: str | None = None
     published_after: str | None = None
@@ -91,7 +95,6 @@ async def query(payload: QueryRequest):
     try:
         result = query_index(
             payload.question,
-            index_dir=payload.index_dir,
             model=payload.model,
             k=payload.top_k,
             company_id=payload.company_id,
@@ -101,6 +104,8 @@ async def query(payload: QueryRequest):
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ContentStoreError as exc:
+        raise _content_error(exc) from exc
     return QueryResponse(answer=result["answer"], sources=result["sources"])
 
 
@@ -110,7 +115,6 @@ async def search(payload: SearchRequest):
     try:
         result = search_chunks(
             payload.query,
-            index_dir=payload.index_dir,
             k=payload.top_k,
             company_id=payload.company_id,
             sector=payload.sector,
@@ -119,6 +123,8 @@ async def search(payload: SearchRequest):
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ContentStoreError as exc:
+        raise _content_error(exc) from exc
     return SearchResponse(**result)
 
 
@@ -127,7 +133,6 @@ async def list_chunks_endpoint(payload: ListChunksRequest):
     """List chunks by metadata only (no semantic query)."""
     try:
         result = list_chunks(
-            index_dir=payload.index_dir,
             k=payload.top_k,
             company_id=payload.company_id,
             sector=payload.sector,
@@ -136,6 +141,8 @@ async def list_chunks_endpoint(payload: ListChunksRequest):
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ContentStoreError as exc:
+        raise _content_error(exc) from exc
     return ListChunksResponse(**result)
 
 
@@ -146,3 +153,5 @@ async def stats(index_dir: str | None = None):
         return index_stats(index_dir or settings.rag_index_dir)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ContentStoreError as exc:
+        raise _content_error(exc) from exc

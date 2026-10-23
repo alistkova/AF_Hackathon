@@ -4,7 +4,7 @@
 import argparse
 import json
 
-from .config import DATA_DIR, INDEX_DIR
+from .config import DATA_DIR, DEFAULT_MODEL, INDEX_DIR
 from .pipeline import (
     build_index,
     index_stats,
@@ -34,12 +34,11 @@ def main() -> None:
         "update", parents=[common], help="Incrementally update index with new PDFs"
     )
 
-    query_parser = subparsers.add_parser("query", parents=[common], help="Query the RAG system")
+    query_parser = subparsers.add_parser("query", help="Query the RAG system")
     query_parser.add_argument("question", type=str, help="Question to ask")
     query_parser.add_argument(
         "--model",
-        default="qwen",
-        choices=["gpt-6-astra", "qwen", "deepseek", "qwen_vl", "kimi"],
+        default=DEFAULT_MODEL,
         help="LLM model to use",
     )
     query_parser.add_argument("--k", type=int, default=5, help="Number of chunks to retrieve")
@@ -50,9 +49,7 @@ def main() -> None:
     query_parser.add_argument("--after", type=str, help="Filter by published_after (YYYY-MM-DD)")
     query_parser.add_argument("--before", type=str, help="Filter by published_before (YYYY-MM-DD)")
 
-    search_parser = subparsers.add_parser(
-        "search", parents=[common], help="Search chunks with filters (no LLM)"
-    )
+    search_parser = subparsers.add_parser("search", help="Search chunks with filters (no LLM)")
     search_parser.add_argument("query", type=str, help="Search query")
     search_parser.add_argument("--k", type=int, default=10, help="Number of chunks to retrieve")
     search_parser.add_argument("--company-id", type=str, help="Filter by company ID")
@@ -60,9 +57,7 @@ def main() -> None:
     search_parser.add_argument("--after", type=str, help="Filter by published_after (YYYY-MM-DD)")
     search_parser.add_argument("--before", type=str, help="Filter by published_before (YYYY-MM-DD)")
 
-    list_parser = subparsers.add_parser(
-        "list-chunks", parents=[common], help="List chunks by metadata only"
-    )
+    list_parser = subparsers.add_parser("list-chunks", help="List chunks by metadata only")
     list_parser.add_argument("--k", type=int, default=100, help="Number of chunks to retrieve")
     list_parser.add_argument("--company-id", type=str, help="Filter by company ID")
     list_parser.add_argument("--sector", type=str, help="Filter by sector")
@@ -93,7 +88,6 @@ def main() -> None:
         if args.stream:
             for chunk in query_index(
                 args.question,
-                index_dir=args.index_dir,
                 model=args.model,
                 k=args.k,
                 temperature=args.temp,
@@ -108,7 +102,6 @@ def main() -> None:
         else:
             result = query_index(
                 args.question,
-                index_dir=args.index_dir,
                 model=args.model,
                 k=args.k,
                 temperature=args.temp,
@@ -121,7 +114,6 @@ def main() -> None:
     elif args.command == "search":
         result = search_chunks(
             args.query,
-            index_dir=args.index_dir,
             k=args.k,
             company_id=args.company_id,
             sector=args.sector,
@@ -131,7 +123,6 @@ def main() -> None:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     elif args.command == "list-chunks":
         result = list_chunks(
-            index_dir=args.index_dir,
             k=args.k,
             company_id=args.company_id,
             sector=args.sector,

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from enum import Enum
 from typing import Any
 
@@ -69,13 +70,54 @@ class RagUpdateIndexRequest(BaseModel):
 
 class RagQueryRequest(BaseModel):
     question: str
-    index_dir: str | None = None
-    model: str | None = 'gpt-5.6-sol'
+    model: str | None = 'qwen'
     top_k: conint(ge=1) | None = 5
+    company_id: str | None = None
+    sector: str | None = None
+    published_after: date | None = None
+    published_before: date | None = None
 
 
 class RagQueryResponse(BaseModel):
     answer: str
+    sources: list[str]
+
+
+class RagChunk(BaseModel):
+    content: str
+    source: str | None = None
+    page: int | None = None
+    chunk: int | None = None
+    company_id: str | None = None
+    sector: str | None = None
+    published_at: date | None = None
+
+
+class RagSearchRequest(BaseModel):
+    query: str
+    top_k: conint(ge=1) | None = 10
+    company_id: str | None = None
+    sector: str | None = None
+    published_after: date | None = None
+    published_before: date | None = None
+
+
+class RagSearchResponse(BaseModel):
+    query: str
+    chunks: list[RagChunk]
+    sources: list[str]
+
+
+class RagListChunksRequest(BaseModel):
+    top_k: conint(ge=1) | None = 100
+    company_id: str | None = None
+    sector: str | None = None
+    published_after: date | None = None
+    published_before: date | None = None
+
+
+class RagListChunksResponse(BaseModel):
+    chunks: list[RagChunk]
     sources: list[str]
 
 

@@ -3,15 +3,14 @@
 from pathlib import Path
 from typing import Any
 
-from .config import DATA_DIR, INDEX_DIR, SCORE_THRESHOLD, vector_store_path
-from .embeddings import (
-    create_vector_store,
-    load_vector_store,
-    save_vector_store,
-)
+from langchain_core.documents import Document
+
+from .config import DATA_DIR, DEFAULT_MODEL, INDEX_DIR
+from .embeddings import add_chunks, create_vector_store
 from .generate import rag_query, rag_stream
-from .ingest import ingest_pdfs_from_dir, load_state
-from .retrieve import Retriever, get_chunks_by_metadata, retrieve_with_filters
+from .ingest import ingest_pdfs_from_dir, load_state, reset_state
+from .retrieve import Retriever, get_chunks_by_metadata, retrieve_with_filters, source_labels
+from .store import count_chunks, drop_chunks
 
 
 def build_index(
@@ -20,29 +19,32 @@ def build_index(
     force_rebuild: bool = False,
 ) -> dict[str, Any]:
     """Build or rebuild the vector index from all PDFs in data directory."""
+    if force_rebuild:
+        reset_state(index_dir)
+        drop_chunks()
+
     result = ingest_pdfs_from_dir(data_dir, index_dir)
     chunks = result["chunks"]
     stats = result["stats"]
 
-    if not chunks:
-        if not force_rebuild:
-            existing = load_vector_store(index_dir)
-            if existing:
-                return {
-                    "status": "unchanged",
-                    "message": "No new files, existing index loaded",
-                    "stats": stats,
-                }
-        return {"status": "empty", "message": "No documents to index", "stats": stats}
+    if chunks:
+        create_vector_store(chunks)
+        return {
+            "status": "rebuilt" if force_rebuild else "built",
+            "message": (
+                f"Indexed {stats['total_chunks']} chunks from {stats['new_files']} new files"
+            ),
+            "stats": stats,
+        }
 
-    vector_store = create_vector_store(chunks, index_dir)
-    save_vector_store(vector_store, index_dir)
-
-    return {
-        "status": "rebuilt" if force_rebuild else "built",
-        "message": f"Indexed {stats['total_chunks']} chunks from {stats['new_files']} new files",
-        "stats": stats,
-    }
+    indexed = count_chunks()
+    if indexed:
+        return {
+            "status": "unchanged",
+            "message": f"No new files, {indexed} chunks already indexed",
+            "stats": stats,
+        }
+    return {"status": "empty", "message": "No documents to index", "stats": stats}
 
 
 def update_index(
@@ -57,12 +59,7 @@ def update_index(
     if not chunks:
         return {"status": "no_changes", "message": "No new files to process", "stats": stats}
 
-    vector_store = load_vector_store(index_dir)
-    if vector_store is None:
-        vector_store = create_vector_store(chunks, index_dir)
-    # PGVector auto-appends, no need to rebuild
-
-    save_vector_store(vector_store, index_dir)
+    add_chunks(chunks)
 
     return {
         "status": "updated",
@@ -73,8 +70,7 @@ def update_index(
 
 def query_index(
     question: str,
-    index_dir: str | Path = INDEX_DIR,
-    model: str = "qwen",
+    model: str = DEFAULT_MODEL,
     k: int = 5,
     temperature: float = 0.3,
     stream: bool = False,
@@ -88,7 +84,6 @@ def query_index(
         return list(
             rag_stream(
                 question,
-                index_dir=index_dir,
                 model=model,
                 k=k,
                 temperature=temperature,
@@ -100,7 +95,6 @@ def query_index(
         )
     return rag_query(
         question,
-        index_dir=index_dir,
         model=model,
         k=k,
         temperature=temperature,
@@ -113,7 +107,6 @@ def query_index(
 
 def search_chunks(
     query: str,
-    index_dir: str | Path = INDEX_DIR,
     k: int = 10,
     company_id: str | None = None,
     sector: str | None = None,
@@ -121,11 +114,8 @@ def search_chunks(
     published_before: str | None = None,
 ) -> dict[str, Any]:
     """Search chunks with filters (for agent/API use) - returns chunks WITHOUT LLM generation."""
-    from .retrieve import source_labels
-
     docs = retrieve_with_filters(
         query,
-        index_dir=index_dir,
         k=k,
         company_id=company_id,
         sector=sector,
@@ -134,24 +124,12 @@ def search_chunks(
     )
     return {
         "query": query,
-        "chunks": [
-            {
-                "content": d.page_content,
-                "source": d.metadata.get("source"),
-                "page": d.metadata.get("page"),
-                "chunk": d.metadata.get("chunk"),
-                "company_ids": d.metadata.get("company_id"),
-                "sectors": d.metadata.get("sector"),
-                "published_at": d.metadata.get("published_at"),
-            }
-            for d in docs
-        ],
+        "chunks": [_chunk_payload(doc) for doc in docs],
         "sources": source_labels(docs),
     }
 
 
 def list_chunks(
-    index_dir: str | Path = INDEX_DIR,
     company_id: str | None = None,
     sector: str | None = None,
     published_after: str | None = None,
@@ -159,10 +137,7 @@ def list_chunks(
     k: int = 100,
 ) -> dict[str, Any]:
     """List chunks by metadata only (no semantic query)."""
-    from .retrieve import source_labels
-
     docs = get_chunks_by_metadata(
-        index_dir=index_dir,
         company_id=company_id,
         sector=sector,
         published_after=published_after,
@@ -170,19 +145,20 @@ def list_chunks(
         k=k,
     )
     return {
-        "chunks": [
-            {
-                "content": d.page_content,
-                "source": d.metadata.get("source"),
-                "page": d.metadata.get("page"),
-                "chunk": d.metadata.get("chunk"),
-                "company_ids": d.metadata.get("company_id"),
-                "sectors": d.metadata.get("sector"),
-                "published_at": d.metadata.get("published_at"),
-            }
-            for d in docs
-        ],
+        "chunks": [_chunk_payload(doc) for doc in docs],
         "sources": source_labels(docs),
+    }
+
+
+def _chunk_payload(doc: Document) -> dict[str, Any]:
+    return {
+        "content": doc.page_content,
+        "source": doc.metadata.get("source"),
+        "page": doc.metadata.get("page"),
+        "chunk": doc.metadata.get("chunk"),
+        "company_id": doc.metadata.get("company_id"),
+        "sector": doc.metadata.get("sector"),
+        "published_at": doc.metadata.get("published_at"),
     }
 
 
@@ -196,14 +172,13 @@ def index_stats(index_dir: str | Path = INDEX_DIR) -> dict[str, Any]:
         "total_pages": total_pages,
         "files": processed,
         "index_dir": str(index_dir),
-        "index_exists": vector_store_path(index_dir).exists(),
+        "index_exists": count_chunks() > 0,
     }
 
 
 def get_retriever(
-    index_dir: str | Path = INDEX_DIR,
     k: int = 5,
-    score_threshold: float = SCORE_THRESHOLD,
+    max_distance: float | None = None,
 ) -> Retriever:
     """Get a retriever instance for custom use."""
-    return Retriever(index_dir=index_dir, k=k, score_threshold=score_threshold)
+    return Retriever(k=k, max_distance=max_distance)

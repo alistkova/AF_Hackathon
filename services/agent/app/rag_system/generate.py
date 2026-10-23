@@ -1,10 +1,9 @@
 import json
-from pathlib import Path
 from typing import Any
 
 import requests
 
-from .config import OLLAMA_BASE_URL, OLLAMA_MODELS
+from .config import DEFAULT_MODEL, OLLAMA_BASE_URL, OLLAMA_MODELS
 from .retrieve import (
     format_context,
     retrieve_with_filters,
@@ -14,7 +13,7 @@ from .retrieve import (
 
 def generate_with_ollama(
     prompt: str,
-    model: str = "qwen",
+    model: str = DEFAULT_MODEL,
     temperature: float = 0.3,
     max_tokens: int = 2048,
     system_prompt: str | None = None,
@@ -63,8 +62,7 @@ RAG_SYSTEM_PROMPT = (
 
 def rag_query(
     question: str,
-    index_dir: str | Path | None = None,
-    model: str = "qwen",
+    model: str = DEFAULT_MODEL,
     k: int = 5,
     temperature: float = 0.3,
     company_id: str | None = None,
@@ -75,7 +73,6 @@ def rag_query(
     """Full RAG pipeline with optional metadata filters: retrieve + generate."""
     docs = retrieve_with_filters(
         question,
-        index_dir=index_dir,
         k=k,
         company_id=company_id,
         sector=sector,
@@ -106,8 +103,7 @@ def rag_query(
 
 def rag_stream(
     question: str,
-    index_dir: str | Path | None = None,
-    model: str = "qwen",
+    model: str = DEFAULT_MODEL,
     k: int = 5,
     temperature: float = 0.3,
     company_id: str | None = None,
@@ -118,7 +114,6 @@ def rag_stream(
     """Stream RAG response (generator)."""
     docs = retrieve_with_filters(
         question,
-        index_dir=index_dir,
         k=k,
         company_id=company_id,
         sector=sector,

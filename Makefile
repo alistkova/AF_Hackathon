@@ -105,7 +105,7 @@ clean: ## Remove local build artifacts
 
 # RAG system targets
 rag-install: ## Install RAG system Python dependencies
-	cd services/agent && $(UV) sync --extra hf
+	cd services/agent && $(UV) sync --extra hf --extra ocr
 
 rag-build: ## Build RAG index from PDFs in services/agent/data/
 	cd services/agent && $(UV) run python -m app.rag_system.cli build --data-dir $(RAG_DATA_DIR) --index-dir $(RAG_INDEX_DIR)
@@ -114,7 +114,7 @@ rag-update: ## Incremental update for new PDFs in RAG system
 	cd services/agent && $(UV) run python -m app.rag_system.cli update --data-dir $(RAG_DATA_DIR) --index-dir $(RAG_INDEX_DIR)
 
 rag-query: ## Query the RAG system (usage: make rag-query Q="your question")
-	cd services/agent && $(UV) run python -m app.rag_system.cli query --index-dir $(RAG_INDEX_DIR) --model $${MODEL:-qwen} --company-id $${COMPANY_ID:-} --sector $${SECTOR:-} --after $${AFTER:-} --before $${BEFORE:-} "$(Q)"
+	cd services/agent && $(UV) run python -m app.rag_system.cli query --model $${MODEL:-$${OLLAMA_MODEL:-qwen}} --company-id $${COMPANY_ID:-} --sector $${SECTOR:-} --after $${AFTER:-} --before $${BEFORE:-} "$(Q)"
 
 rag-watch: ## Watch services/agent/data/ for new PDFs and auto-update
 	cd services/agent && $(UV) run python -m app.rag_system.cli watch --data-dir $(RAG_DATA_DIR) --index-dir $(RAG_INDEX_DIR)
@@ -123,10 +123,10 @@ rag-stats: ## Show RAG index statistics
 	cd services/agent && $(UV) run python -m app.rag_system.cli stats --index-dir $(RAG_INDEX_DIR)
 
 rag-search: ## Search chunks with filters (usage: make rag-search Q="query" COMPANY_ID=magnit)
-	cd services/agent && $(UV) run python -m app.rag_system.cli search --index-dir $(RAG_INDEX_DIR) --k $${K:-10} --company-id $${COMPANY_ID:-} --sector $${SECTOR:-} --after $${AFTER:-} --before $${BEFORE:-} "$(Q)"
+	cd services/agent && $(UV) run python -m app.rag_system.cli search --k $${K:-10} --company-id $${COMPANY_ID:-} --sector $${SECTOR:-} --after $${AFTER:-} --before $${BEFORE:-} "$(Q)"
 
 rag-list: ## List chunks by metadata (usage: make rag-list COMPANY_ID=magnit)
-	cd services/agent && $(UV) run python -m app.rag_system.cli list-chunks --index-dir $(RAG_INDEX_DIR) --k $${K:-100} --company-id $${COMPANY_ID:-} --sector $${SECTOR:-} --after $${AFTER:-} --before $${BEFORE:-}
+	cd services/agent && $(UV) run python -m app.rag_system.cli list-chunks --k $${K:-100} --company-id $${COMPANY_ID:-} --sector $${SECTOR:-} --after $${AFTER:-} --before $${BEFORE:-}
 
-rag-clean: ## Remove RAG index and processed files cache
+rag-clean: ## Remove the local RAG state cache (vectors stay in the content service)
 	cd services/agent && rm -rf $(RAG_INDEX_DIR)

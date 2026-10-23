@@ -43,3 +43,14 @@ Rules:
 ```
 
 See `contracts/openapi/content.yaml` and `contracts/examples/news.json`.
+
+## RAG chunk API
+
+`services/content` owns the `rag_chunks` table in `content_db`. The agent computes embeddings and calls the content service, so it never connects to `content_db`.
+
+- `POST /api/v1/rag/chunks` upserts chunks keyed by `source`, `page` and `chunk`.
+- `POST /api/v1/rag/chunks/search` runs a cosine similarity search with `company_id`, `sector`, `published_after` and `published_before` filters.
+- `POST /api/v1/rag/chunks/list` lists chunks by the same metadata filters.
+- `GET /api/v1/rag/chunks/count` and `DELETE /api/v1/rag/chunks` report and clear the table.
+
+Embeddings are 384-dimensional (`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`). The schemas are in `contracts/openapi/content.yaml`.

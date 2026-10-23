@@ -88,8 +88,12 @@ uv run uvicorn app.main:app --reload --port 8090
 
 The agent includes a RAG system for Russian financial news (ALFA_Russian_Steels format) at `services/agent/app/rag_system/`.
 
+The agent computes embeddings locally and stores chunks through the content service (`CONTENT_URL`, default `http://localhost:8082`). The content service owns the `rag_chunks` table in `content_db` and applies `company_id`, `sector` and `published_at` filters before the similarity search, so the agent never connects to `content_db`. Start the stack or run `make migrate` to create the table.
+
+OCR for scanned PDFs is optional: install the `tesseract` binary with Russian language data, run `cd services/agent && uv sync --extra ocr` (or `make rag-install`) and set `RAG_USE_OCR=True`.
+
 ```bash
-# Install RAG dependencies
+# Install RAG dependencies (embeddings need the hf extra)
 make rag-install
 
 # Build index from PDFs in services/agent/data/
@@ -98,6 +102,9 @@ make rag-build
 # Query the RAG system
 make rag-query Q="ваш вопрос"
 
+# Query with metadata filters
+make rag-search Q="выручка" COMPANY_ID=magnit AFTER=2026-01-01
+
 # Incremental update for new PDFs
 make rag-update
 
@@ -105,7 +112,7 @@ make rag-update
 make rag-stats
 ```
 
-Requires Ollama with models (gpt-5.6-sol, DeepSeek-V4.1-Flash, etc.). Set `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env`.
+Requires Ollama with models (qwen2.5:32b, DeepSeek, etc.). Set `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env`.
 
 ## Commands
 
@@ -126,8 +133,10 @@ make rag-install  # install RAG dependencies
 make rag-build    # build index from PDFs
 make rag-update   # incremental update
 make rag-query Q="question"  # query RAG
+make rag-search Q="query" COMPANY_ID=magnit  # search chunks without the LLM
+make rag-list COMPANY_ID=magnit  # list chunks by metadata
 make rag-stats    # index statistics
-make rag-clean    # remove index and cache
+make rag-clean    # remove the local processed-files cache (vectors stay in the content service)
 ```
 
 ## Service boundaries
@@ -141,6 +150,8 @@ make rag-clean    # remove index and cache
 ## Content API
 
 `GET /api/v1/news` returns the AI team news format: `news_id`, `title`, `published_at`, `source_name`, `source_url`, `full_text`, `tags`, `target_sectors`. The schema is in `contracts/openapi/content.yaml`.
+
+RAG chunks are stored by the content service as well: `POST /api/v1/rag/chunks` upserts embedded chunks, `POST /api/v1/rag/chunks/search` and `POST /api/v1/rag/chunks/list` query them by metadata, `GET /api/v1/rag/chunks/count` counts them and `DELETE /api/v1/rag/chunks` clears the table. The agent uses these endpoints and never opens `content_db`.
 
 ## SSE contract
 

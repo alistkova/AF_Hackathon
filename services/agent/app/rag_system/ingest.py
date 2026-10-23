@@ -7,6 +7,8 @@ import pdfplumber
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from app.config import get_settings
+
 from .config import (
     CHUNK_OVERLAP,
     CHUNK_SIZE,
@@ -20,18 +22,18 @@ from .config import (
     state_path,
 )
 
-# Try to import OCR libraries
+_use_ocr = get_settings().rag_use_ocr
+
 try:
     import pymupdf
     import pytesseract
     from PIL import Image
 
-    OCR_AVAILABLE = True
+    OCR_AVAILABLE = _use_ocr
 except ImportError:
     OCR_AVAILABLE = False
 
 
-# Known company patterns for auto-extraction from PDF text
 COMPANY_PATTERNS = {
     "magnit": [r"магнит", r"magnit"],
     "x5": [r"x5\s*group", r"пятерочка", r"перекресток", r"чижик"],
@@ -66,7 +68,7 @@ SECTOR_PATTERNS = {
     "metallurgy": [r"металлург", r"сталь", r"steel", r"металл", r"руд"],
     "oil_gas": [r"нефть", r"газ", r"oil", r"gas", r"нефтегаз"],
     "banking": [r"банк", r"banking", r"финанс", r"кредит"],
-    "it": [r"ит", r"it\b", r"технолог", r"софт", r"software", r"cyber"],
+    "it": [r"\bit\b", r"технолог", r"софт", r"software", r"cyber"],
     "telecom": [r"телеком", r"связь", r"mobile", r"telecom"],
     "agriculture": [r"сельхоз", r"агро", r"agricultur", r"фермер", r"зерно"],
     "mining": [r"добыч", r"mining", r"шахт", r"месторожден"],
@@ -88,12 +90,10 @@ def extract_pdf_text(pdf_path: Path) -> list[Document]:
         for i, page in enumerate(pdf.pages):
             text = page.extract_text()
             if text and text.strip():
-                # Check if text is mojibake (mostly replacement chars)
                 if _is_mojibake(text):
                     print(f"  Page {i + 1}: Detected mojibake, attempting OCR...")
                     text = _extract_with_ocr(pdf_path, i)
                 if text and text.strip():
-                    # Clean up mojibake markers and normalize
                     text = text.replace("\n", " ").strip()
                     docs.append(
                         Document(
@@ -111,14 +111,13 @@ def _is_mojibake(text: str) -> bool:
     """Check if text is mostly mojibake (replacement characters)."""
     if not text:
         return True
-    replacement_count = text.count("\ufffd") + text.count("�")
-    return replacement_count / len(text) > 0.3
+    return text.count("\ufffd") / len(text) > 0.3
 
 
 def _extract_with_ocr(pdf_path: Path, page_num: int) -> str:
     """Extract text from a PDF page using OCR."""
     if not OCR_AVAILABLE:
-        print("  OCR libraries not available, skipping OCR")
+        print("  OCR disabled or unavailable, skipping OCR")
         return ""
     try:
         doc = pymupdf.open(str(pdf_path))
@@ -134,37 +133,28 @@ def _extract_with_ocr(pdf_path: Path, page_num: int) -> str:
         return ""
 
 
-def _extract_entities(text: str) -> dict[str, list[str]]:
-    """Extract company IDs and sectors from text using pattern matching."""
+def _first_match(text: str, patterns_by_key: dict[str, list[str]], default: str) -> str:
+    """Return the first key with a matching pattern."""
+    for key, patterns in patterns_by_key.items():
+        if any(re.search(pattern, text) for pattern in patterns):
+            return key
+    return default
+
+
+def _extract_entities(text: str) -> dict[str, str]:
+    """Extract the primary company ID and sector from text using pattern matching."""
     text_lower = text.lower()
-    companies = set()
-    sectors = set()
-
-    for company_id, patterns in COMPANY_PATTERNS.items():
-        for pattern in patterns:
-            if re.search(pattern, text_lower, re.IGNORECASE):
-                companies.add(company_id)
-                break
-
-    for sector_id, patterns in SECTOR_PATTERNS.items():
-        for pattern in patterns:
-            if re.search(pattern, text_lower, re.IGNORECASE):
-                sectors.add(sector_id)
-                break
-
     return {
-        FILTER_COMPANY_ID: list(companies) if companies else ["unknown"],
-        FILTER_SECTOR: list(sectors) if sectors else ["general"],
+        FILTER_COMPANY_ID: _first_match(text_lower, COMPANY_PATTERNS, "unknown"),
+        FILTER_SECTOR: _first_match(text_lower, SECTOR_PATTERNS, "general"),
     }
 
 
 def _extract_date(text: str) -> str | None:
     """Try to extract a date from text (YYYY-MM-DD or DD.MM.YYYY)."""
-    # ISO format
     match = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", text)
     if match:
         return match.group(1)
-    # DD.MM.YYYY
     match = re.search(r"\b(\d{2}\.\d{2}\.\d{4})\b", text)
     if match:
         d, m, y = match.group(1).split(".")
@@ -211,6 +201,12 @@ def save_state(state: dict, index_dir: str | Path | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def reset_state(index_dir: str | Path | None = None) -> None:
+    """Remove the processing state file so every PDF is ingested again."""
+    path = state_path(index_dir)
+    path.unlink(missing_ok=True)
 
 
 def get_new_files(state: dict, data_dir: str | Path | None = None) -> list[Path]:

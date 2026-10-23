@@ -19,11 +19,10 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = ""
 
-    # RAG settings
     rag_index_dir: str = str(_TEMP_DIR / "alfa_rag_index")
     rag_data_dir: str = str(_AGENT_DIR / "data")
     rag_use_ocr: bool = False
-    rag_tfidf_max_features: int = 5000
+    content_url: str = "http://localhost:8082"
 
     def step_delay(self) -> float:
         raw = self.agent_step_delay.strip().lower()

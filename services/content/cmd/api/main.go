@@ -46,6 +46,11 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "content"})
 	})
 	router.GET("/api/v1/news", handler.List)
+	router.POST("/api/v1/rag/chunks", handler.UpsertRAGChunks)
+	router.POST("/api/v1/rag/chunks/search", handler.SearchRAGChunks)
+	router.POST("/api/v1/rag/chunks/list", handler.ListRAGChunks)
+	router.GET("/api/v1/rag/chunks/count", handler.CountRAGChunks)
+	router.DELETE("/api/v1/rag/chunks", handler.DeleteRAGChunks)
 
 	server := &http.Server{
 		Addr:              config.String("CONTENT_ADDR", ":8082"),
