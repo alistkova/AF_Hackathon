@@ -12,6 +12,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var (
+	errChunkContentRequired = errors.New("chunk content is required")
+	errChunkSourceRequired  = errors.New("chunk source is required")
+	errChunkOrdinalNegative = errors.New("chunk ordinals must not be negative")
+	errChunkPublishedFormat = errors.New("chunk published_at must use YYYY-MM-DD")
+	errFilterDateFormat     = errors.New("filter date must use YYYY-MM-DD")
+	errEmbeddingDimensions  = errors.New("embedding must have 384 dimensions")
+	errEmbeddingValue       = errors.New("embedding contains invalid values")
+)
+
 func (h *Handler) UpsertRAGChunks(c *gin.Context) {
 	var payload RAGUpsertRequest
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -24,7 +34,8 @@ func (h *Handler) UpsertRAGChunks(c *gin.Context) {
 	}
 	for _, chunk := range payload.Chunks {
 		if err := validateRAGChunk(chunk); err != nil {
-			httpx.Error(c, http.StatusBadRequest, "invalid_chunk", err.Error())
+			code, message := ragValidationError(err)
+			httpx.Error(c, http.StatusBadRequest, code, message)
 			return
 		}
 	}
@@ -45,11 +56,13 @@ func (h *Handler) SearchRAGChunks(c *gin.Context) {
 		return
 	}
 	if err := validateEmbedding(payload.Embedding); err != nil {
-		httpx.Error(c, http.StatusBadRequest, "invalid_embedding", err.Error())
+		code, message := ragValidationError(err)
+		httpx.Error(c, http.StatusBadRequest, code, message)
 		return
 	}
 	if err := validateRAGFilter(payload.RAGFilter); err != nil {
-		httpx.Error(c, http.StatusBadRequest, "invalid_filter", err.Error())
+		code, message := ragValidationError(err)
+		httpx.Error(c, http.StatusBadRequest, code, message)
 		return
 	}
 	if payload.MaxDistance != nil && *payload.MaxDistance < 0 {
@@ -78,7 +91,8 @@ func (h *Handler) ListRAGChunks(c *gin.Context) {
 		return
 	}
 	if err := validateRAGFilter(payload.RAGFilter); err != nil {
-		httpx.Error(c, http.StatusBadRequest, "invalid_filter", err.Error())
+		code, message := ragValidationError(err)
+		httpx.Error(c, http.StatusBadRequest, code, message)
 		return
 	}
 
@@ -116,20 +130,20 @@ func (h *Handler) DeleteRAGChunks(c *gin.Context) {
 
 func validateRAGChunk(chunk RAGChunkInput) error {
 	if strings.TrimSpace(chunk.Content) == "" {
-		return errors.New("Текст чанка обязателен")
+		return errChunkContentRequired
 	}
 	if strings.TrimSpace(chunk.Source) == "" {
-		return errors.New("Источник чанка обязателен")
+		return errChunkSourceRequired
 	}
 	if chunk.Page < 0 || chunk.Chunk < 0 {
-		return errors.New("Номер страницы и чанка не могут быть отрицательными")
+		return errChunkOrdinalNegative
 	}
 	if err := validateEmbedding(chunk.Embedding); err != nil {
 		return err
 	}
 	if chunk.PublishedAt != nil && *chunk.PublishedAt != "" {
 		if _, err := time.Parse("2006-01-02", *chunk.PublishedAt); err != nil {
-			return errors.New("Дата публикации должна быть в формате YYYY-MM-DD")
+			return errChunkPublishedFormat
 		}
 	}
 	return nil
@@ -141,7 +155,7 @@ func validateRAGFilter(filter RAGFilter) error {
 			continue
 		}
 		if _, err := time.Parse("2006-01-02", raw); err != nil {
-			return errors.New("Дата фильтра должна быть в формате YYYY-MM-DD")
+			return errFilterDateFormat
 		}
 	}
 	return nil
@@ -149,13 +163,36 @@ func validateRAGFilter(filter RAGFilter) error {
 
 func validateEmbedding(values []float32) error {
 	if len(values) != RAGEmbeddingDimensions {
-		return fmt.Errorf("Размерность эмбеддинга должна быть %d", RAGEmbeddingDimensions)
+		return errEmbeddingDimensions
 	}
 	for _, value := range values {
 		number := float64(value)
 		if math.IsNaN(number) || math.IsInf(number, 0) {
-			return errors.New("Эмбеддинг содержит недопустимые значения")
+			return errEmbeddingValue
 		}
 	}
 	return nil
+}
+
+func ragValidationError(err error) (string, string) {
+	switch {
+	case errors.Is(err, errChunkContentRequired):
+		return "invalid_chunk", "Текст чанка обязателен"
+	case errors.Is(err, errChunkSourceRequired):
+		return "invalid_chunk", "Источник чанка обязателен"
+	case errors.Is(err, errChunkOrdinalNegative):
+		return "invalid_chunk", "Номер страницы и чанка не могут быть отрицательными"
+	case errors.Is(err, errChunkPublishedFormat):
+		return "invalid_chunk", "Дата публикации должна быть в формате YYYY-MM-DD"
+	case errors.Is(err, errFilterDateFormat):
+		return "invalid_filter", "Дата фильтра должна быть в формате YYYY-MM-DD"
+	case errors.Is(err, errEmbeddingDimensions):
+		return "invalid_embedding", fmt.Sprintf(
+			"Размерность эмбеддинга должна быть %d",
+			RAGEmbeddingDimensions,
+		)
+	case errors.Is(err, errEmbeddingValue):
+		return "invalid_embedding", "Эмбеддинг содержит недопустимые значения"
+	}
+	return "invalid_request", "Некорректный запрос"
 }

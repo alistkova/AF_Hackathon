@@ -155,6 +155,30 @@ func TestValidateEmbedding(t *testing.T) {
 	}
 }
 
+func TestRAGValidationErrorMapping(t *testing.T) {
+	cases := []struct {
+		err  error
+		code string
+	}{
+		{errChunkContentRequired, "invalid_chunk"},
+		{errChunkSourceRequired, "invalid_chunk"},
+		{errChunkOrdinalNegative, "invalid_chunk"},
+		{errChunkPublishedFormat, "invalid_chunk"},
+		{errFilterDateFormat, "invalid_filter"},
+		{errEmbeddingDimensions, "invalid_embedding"},
+		{errEmbeddingValue, "invalid_embedding"},
+	}
+	for _, tc := range cases {
+		code, message := ragValidationError(tc.err)
+		if code != tc.code {
+			t.Fatalf("expected code %q, got %q", tc.code, code)
+		}
+		if message == "" {
+			t.Fatalf("expected a message for %v", tc.err)
+		}
+	}
+}
+
 func TestSearchRAGChunksHandlerPassesFilters(t *testing.T) {
 	repo := &fakeStore{searchChunks: []RAGChunk{{Content: "chunk", CompanyID: "magnit"}}}
 	router := newTestRouter(repo)
