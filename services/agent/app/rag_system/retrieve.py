@@ -9,8 +9,8 @@ from .config import (
     SCORE_THRESHOLD,
     TOP_K,
 )
-from .embeddings import load_vector_store
-from .embeddings import search as search_embeddings, search_by_metadata
+from .embeddings import load_vector_store, search_by_metadata
+from .embeddings import search as search_embeddings
 
 
 def format_context(docs: list[Document]) -> str:
@@ -162,7 +162,7 @@ class Retriever:
         sector: str | None = None,
         published_after: str | None = None,
         published_before: str | None = None,
-    ) -> list[Document:
+    ) -> list[Document]:
         """Retrieve with metadata filters."""
         if self.vector_store is None:
             return []

@@ -121,7 +121,7 @@ def search_chunks(
     published_before: str | None = None,
 ) -> dict[str, Any]:
     """Search chunks with filters (for agent/API use) - returns chunks WITHOUT LLM generation."""
-    from .retrieve import retrieve_with_filters, source_labels
+    from .retrieve import source_labels
 
     docs = retrieve_with_filters(
         query,
@@ -159,7 +159,7 @@ def list_chunks(
     k: int = 100,
 ) -> dict[str, Any]:
     """List chunks by metadata only (no semantic query)."""
-    from .retrieve import get_chunks_by_metadata, source_labels
+    from .retrieve import source_labels
 
     docs = get_chunks_by_metadata(
         index_dir=index_dir,

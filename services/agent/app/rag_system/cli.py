@@ -5,7 +5,14 @@ import argparse
 import json
 
 from .config import DATA_DIR, INDEX_DIR
-from .pipeline import build_index, index_stats, list_chunks, query_index, search_chunks, update_index
+from .pipeline import (
+    build_index,
+    index_stats,
+    list_chunks,
+    query_index,
+    search_chunks,
+    update_index,
+)
 
 
 def main() -> None:
@@ -32,7 +39,7 @@ def main() -> None:
     query_parser.add_argument(
         "--model",
         default="qwen",
-        choices=["gpt-6-astra", "gpt-6-astra", "qwen", "deepseek", "qwen_vl", "kimi"],
+        choices=["gpt-6-astra", "qwen", "deepseek", "qwen_vl", "kimi"],
         help="LLM model to use",
     )
     query_parser.add_argument("--k", type=int, default=5, help="Number of chunks to retrieve")
@@ -43,7 +50,9 @@ def main() -> None:
     query_parser.add_argument("--after", type=str, help="Filter by published_after (YYYY-MM-DD)")
     query_parser.add_argument("--before", type=str, help="Filter by published_before (YYYY-MM-DD)")
 
-    search_parser = subparsers.add_parser("search", parents=[common], help="Search chunks with filters (no LLM)")
+    search_parser = subparsers.add_parser(
+        "search", parents=[common], help="Search chunks with filters (no LLM)"
+    )
     search_parser.add_argument("query", type=str, help="Search query")
     search_parser.add_argument("--k", type=int, default=10, help="Number of chunks to retrieve")
     search_parser.add_argument("--company-id", type=str, help="Filter by company ID")
@@ -51,7 +60,9 @@ def main() -> None:
     search_parser.add_argument("--after", type=str, help="Filter by published_after (YYYY-MM-DD)")
     search_parser.add_argument("--before", type=str, help="Filter by published_before (YYYY-MM-DD)")
 
-    list_parser = subparsers.add_parser("list-chunks", parents=[common], help="List chunks by metadata only")
+    list_parser = subparsers.add_parser(
+        "list-chunks", parents=[common], help="List chunks by metadata only"
+    )
     list_parser.add_argument("--k", type=int, default=100, help="Number of chunks to retrieve")
     list_parser.add_argument("--company-id", type=str, help="Filter by company ID")
     list_parser.add_argument("--sector", type=str, help="Filter by sector")

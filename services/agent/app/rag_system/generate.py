@@ -7,8 +7,6 @@ import requests
 from .config import OLLAMA_BASE_URL, OLLAMA_MODELS
 from .retrieve import (
     format_context,
-    retrieve,
-    retrieve_with_context,
     retrieve_with_filters,
     source_labels,
 )

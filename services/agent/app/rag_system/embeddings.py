@@ -1,4 +1,3 @@
-import os
 import pickle
 from pathlib import Path
 from typing import Any
@@ -9,12 +8,8 @@ from langchain_postgres import PGVector
 
 from .config import (
     EMBEDDING_MODEL,
-    FILTER_CHUNK,
     FILTER_COMPANY_ID,
-    FILTER_PAGE,
-    FILTER_PUBLISHED_AT,
     FILTER_SECTOR,
-    FILTER_SOURCE,
     PGVECTOR_DSN,
     PGVECTOR_TABLE,
 )
@@ -108,6 +103,7 @@ def create_vector_store(chunks: list[Document], index_dir: str | Path | None = N
     texts = [c.page_content for c in chunks]
     metadatas = []
     import json
+
     for c in chunks:
         md = c.metadata.copy()
         # Convert list fields to JSON strings for pgvector JSONB
