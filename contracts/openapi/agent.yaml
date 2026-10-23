@@ -47,6 +47,154 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /v1/rag/build-index:
+    post:
+      operationId: buildRagIndex
+      description: Starts a background index build from PDF files.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagBuildIndexRequest"
+      responses:
+        "200":
+          description: Index build started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagJobAccepted"
+  /v1/rag/update-index:
+    post:
+      operationId: updateRagIndex
+      description: Starts a background incremental index update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagUpdateIndexRequest"
+      responses:
+        "200":
+          description: Index update started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagJobAccepted"
+  /v1/rag/query:
+    post:
+      operationId: queryRagIndex
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagQueryRequest"
+      responses:
+        "200":
+          description: RAG answer with source labels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagQueryResponse"
+        "404":
+          description: RAG index not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "400":
+          description: Invalid filters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Content service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/rag/search:
+    post:
+      operationId: searchRagChunks
+      description: Retrieves chunks without LLM generation, filtered by metadata.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagSearchRequest"
+      responses:
+        "200":
+          description: Matching chunks with source labels
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagSearchResponse"
+        "400":
+          description: Invalid filters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Content service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/rag/list-chunks:
+    post:
+      operationId: listRagChunks
+      description: Lists chunks by metadata only, without a semantic query.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagListChunksRequest"
+      responses:
+        "200":
+          description: Chunks matching the metadata filters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagListChunksResponse"
+        "400":
+          description: Invalid filters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Content service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/rag/stats:
+    get:
+      operationId: getRagStats
+      parameters:
+        - name: index_dir
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: RAG index statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagStats"
+        "503":
+          description: Content service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   schemas:
     AnalysisRequest:
@@ -170,6 +318,160 @@ components:
         meta:
           type: object
           additionalProperties: true
+    RagBuildIndexRequest:
+      type: object
+      properties:
+        data_dir:
+          type: string
+        index_dir:
+          type: string
+    RagUpdateIndexRequest:
+      type: object
+      properties:
+        data_dir:
+          type: string
+        index_dir:
+          type: string
+    RagQueryRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+        model:
+          type: string
+          default: qwen
+        top_k:
+          type: integer
+          default: 5
+          minimum: 1
+        company_id:
+          type: string
+        sector:
+          type: string
+        published_after:
+          type: string
+          format: date
+        published_before:
+          type: string
+          format: date
+    RagQueryResponse:
+      type: object
+      required: [answer, sources]
+      properties:
+        answer:
+          type: string
+        sources:
+          type: array
+          items:
+            type: string
+    RagChunk:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+        source:
+          type: string
+        page:
+          type: integer
+        chunk:
+          type: integer
+        company_id:
+          type: string
+        sector:
+          type: string
+        published_at:
+          type: string
+          format: date
+    RagSearchRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+        top_k:
+          type: integer
+          default: 10
+          minimum: 1
+        company_id:
+          type: string
+        sector:
+          type: string
+        published_after:
+          type: string
+          format: date
+        published_before:
+          type: string
+          format: date
+    RagSearchResponse:
+      type: object
+      required: [query, chunks, sources]
+      properties:
+        query:
+          type: string
+        chunks:
+          type: array
+          items:
+            $ref: "#/components/schemas/RagChunk"
+        sources:
+          type: array
+          items:
+            type: string
+    RagListChunksRequest:
+      type: object
+      properties:
+        top_k:
+          type: integer
+          default: 100
+          minimum: 1
+        company_id:
+          type: string
+        sector:
+          type: string
+        published_after:
+          type: string
+          format: date
+        published_before:
+          type: string
+          format: date
+    RagListChunksResponse:
+      type: object
+      required: [chunks, sources]
+      properties:
+        chunks:
+          type: array
+          items:
+            $ref: "#/components/schemas/RagChunk"
+        sources:
+          type: array
+          items:
+            type: string
+    RagJobAccepted:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+    RagStats:
+      type: object
+      required: [processed_files, total_pages, files, index_dir, index_exists]
+      properties:
+        processed_files:
+          type: integer
+        total_pages:
+          type: integer
+        files:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+        index_dir:
+          type: string
+        index_exists:
+          type: boolean
     Error:
       type: object
       required: [code, message]
