@@ -11,7 +11,7 @@ from .embeddings import (
 )
 from .generate import rag_query, rag_stream
 from .ingest import ingest_pdfs_from_dir, load_state
-from .retrieve import Retriever
+from .retrieve import Retriever, get_chunks_by_metadata, retrieve_with_filters
 
 
 def build_index(
@@ -60,9 +60,7 @@ def update_index(
     vector_store = load_vector_store(index_dir)
     if vector_store is None:
         vector_store = create_vector_store(chunks, index_dir)
-    else:
-        existing_docs = list(vector_store.docstore._dict.values())
-        vector_store = create_vector_store([*existing_docs, *chunks], index_dir)
+    # PGVector auto-appends, no need to rebuild
 
     save_vector_store(vector_store, index_dir)
 
@@ -76,10 +74,14 @@ def update_index(
 def query_index(
     question: str,
     index_dir: str | Path = INDEX_DIR,
-    model: str = "gpt-5.6-sol",
+    model: str = "qwen",
     k: int = 5,
     temperature: float = 0.3,
     stream: bool = False,
+    company_id: str | None = None,
+    sector: str | None = None,
+    published_after: str | None = None,
+    published_before: str | None = None,
 ) -> dict[str, Any] | list[str]:
     """Query the RAG system."""
     if stream:
@@ -90,6 +92,10 @@ def query_index(
                 model=model,
                 k=k,
                 temperature=temperature,
+                company_id=company_id,
+                sector=sector,
+                published_after=published_after,
+                published_before=published_before,
             )
         )
     return rag_query(
@@ -98,7 +104,86 @@ def query_index(
         model=model,
         k=k,
         temperature=temperature,
+        company_id=company_id,
+        sector=sector,
+        published_after=published_after,
+        published_before=published_before,
     )
+
+
+def search_chunks(
+    query: str,
+    index_dir: str | Path = INDEX_DIR,
+    k: int = 10,
+    company_id: str | None = None,
+    sector: str | None = None,
+    published_after: str | None = None,
+    published_before: str | None = None,
+) -> dict[str, Any]:
+    """Search chunks with filters (for agent/API use) - returns chunks WITHOUT LLM generation."""
+    from .retrieve import retrieve_with_filters, source_labels
+
+    docs = retrieve_with_filters(
+        query,
+        index_dir=index_dir,
+        k=k,
+        company_id=company_id,
+        sector=sector,
+        published_after=published_after,
+        published_before=published_before,
+    )
+    return {
+        "query": query,
+        "chunks": [
+            {
+                "content": d.page_content,
+                "source": d.metadata.get("source"),
+                "page": d.metadata.get("page"),
+                "chunk": d.metadata.get("chunk"),
+                "company_ids": d.metadata.get("company_id"),
+                "sectors": d.metadata.get("sector"),
+                "published_at": d.metadata.get("published_at"),
+            }
+            for d in docs
+        ],
+        "sources": source_labels(docs),
+    }
+
+
+def list_chunks(
+    index_dir: str | Path = INDEX_DIR,
+    company_id: str | None = None,
+    sector: str | None = None,
+    published_after: str | None = None,
+    published_before: str | None = None,
+    k: int = 100,
+) -> dict[str, Any]:
+    """List chunks by metadata only (no semantic query)."""
+    from .retrieve import get_chunks_by_metadata, source_labels
+
+    docs = get_chunks_by_metadata(
+        index_dir=index_dir,
+        company_id=company_id,
+        sector=sector,
+        published_after=published_after,
+        published_before=published_before,
+        k=k,
+    )
+    return {
+        "chunks": [
+            {
+                "content": d.page_content,
+                "source": d.metadata.get("source"),
+                "page": d.metadata.get("page"),
+                "chunk": d.metadata.get("chunk"),
+                "company_ids": d.metadata.get("company_id"),
+                "sectors": d.metadata.get("sector"),
+                "published_at": d.metadata.get("published_at"),
+            }
+            for d in docs
+        ],
+        "sources": source_labels(docs),
+    }
 
 
 def index_stats(index_dir: str | Path = INDEX_DIR) -> dict[str, Any]:

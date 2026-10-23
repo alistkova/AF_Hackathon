@@ -1,13 +1,23 @@
+import os
 import pickle
 from pathlib import Path
 from typing import Any
 
-from langchain_community.vectorstores import FAISS
-from langchain_community.vectorstores.utils import DistanceStrategy
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from langchain_postgres import PGVector
 
-from .config import EMBEDDING_MODEL, vector_store_path
+from .config import (
+    EMBEDDING_MODEL,
+    FILTER_CHUNK,
+    FILTER_COMPANY_ID,
+    FILTER_PAGE,
+    FILTER_PUBLISHED_AT,
+    FILTER_SECTOR,
+    FILTER_SOURCE,
+    PGVECTOR_DSN,
+    PGVECTOR_TABLE,
+)
 
 
 class TfidfEmbeddings(Embeddings):
@@ -50,78 +60,99 @@ class TfidfEmbeddings(Embeddings):
 
 
 _embedding_models: dict[str, Any] = {}
+_pgvector_stores: dict[str, Any] = {}
 
 
 def get_embeddings(index_dir: str | Path | None = None):
-    """Get or create the embedding model for an index directory."""
-    store_path = vector_store_path(index_dir)
-    key = str(store_path)
+    """Get or create the embedding model."""
+    key = str(index_dir or "default")
     if key not in _embedding_models:
-        if EMBEDDING_MODEL == "tfidf":
-            vectorizer_path = store_path / "tfidf_vectorizer.pkl"
-            if vectorizer_path.exists():
-                _embedding_models[key] = TfidfEmbeddings.load_vectorizer(str(vectorizer_path))
-            else:
-                _embedding_models[key] = TfidfEmbeddings()
-        else:
-            try:
-                from langchain_huggingface import HuggingFaceEmbeddings
-            except ImportError as exc:
-                raise RuntimeError(
-                    "HuggingFace embeddings require the 'hf' extra: uv sync --extra hf"
-                ) from exc
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError as exc:
+            raise RuntimeError(
+                "HuggingFace embeddings require the 'hf' extra: uv sync --extra hf"
+            ) from exc
 
-            _embedding_models[key] = HuggingFaceEmbeddings(
-                model_name=EMBEDDING_MODEL,
-                model_kwargs={"device": "cpu"},
-                encode_kwargs={"normalize_embeddings": True},
-            )
+        _embedding_models[key] = HuggingFaceEmbeddings(
+            model_name=EMBEDDING_MODEL,
+            model_kwargs={"device": "cpu"},
+            encode_kwargs={"normalize_embeddings": True},
+        )
     return _embedding_models[key]
 
 
-def create_vector_store(chunks: list[Document], index_dir: str | Path | None = None) -> FAISS:
-    """Create a new FAISS vector store from chunks."""
+def _get_pgvector_store(index_dir: str | Path | None = None, embeddings=None) -> PGVector:
+    """Get or create PGVector store connected to PostgreSQL."""
+    key = str(index_dir or "default")
+    if key not in _pgvector_stores:
+        if embeddings is None:
+            embeddings = get_embeddings(index_dir)
+        _pgvector_stores[key] = PGVector(
+            embeddings=embeddings,
+            collection_name=PGVECTOR_TABLE,
+            connection=PGVECTOR_DSN,
+            use_jsonb=True,
+        )
+    return _pgvector_stores[key]
+
+
+def create_vector_store(chunks: list[Document], index_dir: str | Path | None = None) -> PGVector:
+    """Add chunks to PGVector store."""
     if not chunks:
         raise ValueError("Cannot create a vector store from an empty document list")
-    store_path = vector_store_path(index_dir)
-    store_path.mkdir(parents=True, exist_ok=True)
-    if EMBEDDING_MODEL == "tfidf":
-        embeddings = TfidfEmbeddings()
-    else:
-        embeddings = get_embeddings(index_dir)
-    texts = [c.page_content for c in chunks]
-    metadatas = [c.metadata for c in chunks]
-    vector_store = FAISS.from_texts(
-        texts,
-        embeddings,
-        metadatas=metadatas,
-        distance_strategy=DistanceStrategy.MAX_INNER_PRODUCT,
-    )
-    if hasattr(embeddings, "save_vectorizer"):
-        embeddings.save_vectorizer(str(store_path / "tfidf_vectorizer.pkl"))
-    _embedding_models[str(store_path)] = embeddings
-    return vector_store
 
-
-def load_vector_store(index_dir: str | Path | None = None) -> FAISS | None:
-    """Load existing FAISS vector store."""
-    store_path = vector_store_path(index_dir)
-    if not store_path.exists():
-        return None
     embeddings = get_embeddings(index_dir)
-    return FAISS.load_local(str(store_path), embeddings, allow_dangerous_deserialization=True)
+    store = _get_pgvector_store(index_dir, embeddings)
+
+    texts = [c.page_content for c in chunks]
+    metadatas = []
+    import json
+    for c in chunks:
+        md = c.metadata.copy()
+        # Convert list fields to JSON strings for pgvector JSONB
+        for key in [FILTER_COMPANY_ID, FILTER_SECTOR]:
+            if key in md and isinstance(md[key], list):
+                md[key] = json.dumps(md[key])
+        metadatas.append(md)
+
+    store.add_texts(texts=texts, metadatas=metadatas)
+    return store
 
 
-def save_vector_store(vector_store: FAISS, index_dir: str | Path | None = None) -> None:
-    """Save FAISS vector store to disk."""
-    store_path = vector_store_path(index_dir)
-    store_path.mkdir(parents=True, exist_ok=True)
-    vector_store.save_local(str(store_path))
+def load_vector_store(index_dir: str | Path | None = None) -> PGVector | None:
+    """Load existing PGVector store."""
+    try:
+        embeddings = get_embeddings(index_dir)
+        return _get_pgvector_store(index_dir, embeddings)
+    except Exception:
+        return None
+
+
+def save_vector_store(vector_store: PGVector, index_dir: str | Path | None = None) -> None:
+    """PGVector persists automatically, no-op."""
+    pass
 
 
 def search(
-    vector_store: FAISS, query: str, k: int = 5, score_threshold: float = 0.0
+    vector_store: PGVector,
+    query: str,
+    k: int = 5,
+    score_threshold: float = 0.0,
+    filter: dict | None = None,
 ) -> list[Document]:
-    """Search the vector store for relevant chunks."""
-    results = vector_store.similarity_search_with_score(query, k=k)
+    """Search the vector store for relevant chunks with optional metadata filter."""
+    if filter:
+        results = vector_store.similarity_search_with_score(query, k=k, filter=filter)
+    else:
+        results = vector_store.similarity_search_with_score(query, k=k)
     return [doc for doc, score in results if score >= score_threshold]
+
+
+def search_by_metadata(
+    vector_store: PGVector,
+    filter: dict,
+    k: int = 100,
+) -> list[Document]:
+    """Search by metadata only (no vector similarity), useful for filtering."""
+    return vector_store.similarity_search(query="", k=k, filter=filter)

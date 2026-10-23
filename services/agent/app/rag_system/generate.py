@@ -5,7 +5,13 @@ from typing import Any
 import requests
 
 from .config import OLLAMA_BASE_URL, OLLAMA_MODELS
-from .retrieve import format_context, retrieve, retrieve_with_context, source_labels
+from .retrieve import (
+    format_context,
+    retrieve,
+    retrieve_with_context,
+    retrieve_with_filters,
+    source_labels,
+)
 
 
 def generate_with_ollama(
@@ -63,9 +69,21 @@ def rag_query(
     model: str = "qwen",
     k: int = 5,
     temperature: float = 0.3,
+    company_id: str | None = None,
+    sector: str | None = None,
+    published_after: str | None = None,
+    published_before: str | None = None,
 ) -> dict[str, Any]:
-    """Full RAG pipeline: retrieve + generate."""
-    docs = retrieve(question, index_dir=index_dir, k=k)
+    """Full RAG pipeline with optional metadata filters: retrieve + generate."""
+    docs = retrieve_with_filters(
+        question,
+        index_dir=index_dir,
+        k=k,
+        company_id=company_id,
+        sector=sector,
+        published_after=published_after,
+        published_before=published_before,
+    )
     context = format_context(docs)
 
     prompt = f"""Контекст из новостей и отчетов:
@@ -94,9 +112,22 @@ def rag_stream(
     model: str = "qwen",
     k: int = 5,
     temperature: float = 0.3,
+    company_id: str | None = None,
+    sector: str | None = None,
+    published_after: str | None = None,
+    published_before: str | None = None,
 ):
     """Stream RAG response (generator)."""
-    context = retrieve_with_context(question, index_dir=index_dir, k=k)
+    docs = retrieve_with_filters(
+        question,
+        index_dir=index_dir,
+        k=k,
+        company_id=company_id,
+        sector=sector,
+        published_after=published_after,
+        published_before=published_before,
+    )
+    context = format_context(docs)
     model_name = OLLAMA_MODELS.get(model, model)
 
     prompt = f"""Контекст из новостей и отчетов:
