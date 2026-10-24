@@ -89,6 +89,38 @@ if [[ -n "$forbidden" ]]; then
 fi
 
 company_id="${client_companies%% *}"
+
+status="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/api/v1/feed?company_id=$company_id")"
+if [[ "$status" != "401" ]]; then
+  echo "smoke: unauthenticated feed returned $status, want 401" >&2
+  exit 1
+fi
+
+feed="$(curl -fsS -b "$CLIENT_JAR" "$BASE_URL/api/v1/feed?company_id=$company_id")"
+python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin).get("items"), list)' <<<"$feed"
+
+if [[ -n "$forbidden" ]]; then
+  status="$(curl -sS -o /dev/null -w '%{http_code}' -b "$CLIENT_JAR" "$BASE_URL/api/v1/feed?company_id=$forbidden")"
+  if [[ "$status" != "404" ]]; then
+    echo "smoke: client read the forbidden feed $forbidden with $status, want 404" >&2
+    exit 1
+  fi
+
+  forbidden_payload="$(python3 -c 'import json,sys; print(json.dumps({"company_id": sys.argv[1], "event": {"id": "smoke-forbidden", "title": "Forbidden"}}))' "$forbidden")"
+  status="$(curl -sS -o /dev/null -w '%{http_code}' -b "$CLIENT_JAR" -X POST "$BASE_URL/api/v1/insights/jobs" \
+    -H 'Content-Type: application/json' -d "$forbidden_payload")"
+  if [[ "$status" != "404" ]]; then
+    echo "smoke: client created a job for $forbidden with $status, want 404" >&2
+    exit 1
+  fi
+fi
+
+news="$(curl -fsS "$BASE_URL/api/v1/news?limit=5")"
+python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin), list)' <<<"$news"
+
+search="$(curl -fsS --get --data-urlencode "q=ставка" "$BASE_URL/api/v1/search")"
+python3 -c 'import json,sys; assert "items" in json.load(sys.stdin)' <<<"$search"
+
 profile="$(curl -fsS -b "$CLIENT_JAR" "$BASE_URL/api/v1/companies/$company_id")"
 python3 -c 'import json,sys; item=json.load(sys.stdin); assert item["id"] == sys.argv[1] and item["name"], item' "$company_id" <<<"$profile"
 
@@ -102,6 +134,12 @@ job="$(curl -fsS -b "$ADMIN_JAR" -X POST "$BASE_URL/api/v1/insights/jobs" \
   -d "$payload")"
 job_id="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["job_id"])' <<<"$job")"
 test "$job_id" != "null"
+
+status="$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/api/v1/insights/jobs/$job_id")"
+if [[ "$status" != "401" ]]; then
+  echo "smoke: unauthenticated job read returned $status, want 401" >&2
+  exit 1
+fi
 
 timeout 60 curl -fsSN -b "$ADMIN_JAR" "$BASE_URL/api/v1/insights/jobs/$job_id/events" -o "$TMP_FILE"
 grep -q 'event: step' "$TMP_FILE"

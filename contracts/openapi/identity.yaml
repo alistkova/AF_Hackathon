@@ -27,7 +27,9 @@ paths:
   /api/v1/auth/register:
     post:
       operationId: registerUser
-      description: Creates a user. The first registered user becomes an admin, every later user is an analyst.
+      description: |
+        Creates a user when `IDENTITY_REGISTRATION_ENABLED` is true. The first registered user
+        becomes an admin, every later user is an analyst.
       requestBody:
         required: true
         content:
@@ -43,6 +45,12 @@ paths:
                 $ref: "#/components/schemas/User"
         "400":
           description: Email or password does not meet the requirements
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Registration is disabled
           content:
             application/json:
               schema:
@@ -89,14 +97,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many failed attempts; retry after the `Retry-After` header
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/v1/auth/logout:
     post:
       operationId: logoutUser
-      description: Revokes the current session and clears the session cookie.
-      security:
-        - sessionCookie: []
+      description: |
+        Revokes the current session when a valid token is supplied and always clears the
+        session cookie. Idempotent and safe to call without a session.
       responses:
         "204":
           description: Session revoked
@@ -119,7 +137,9 @@ paths:
   /api/v1/me/companies:
     get:
       operationId: listAccessibleCompanies
-      description: Company identifiers the current user is allowed to see.
+      description: |
+        Explicit company grants for the current user. Admins bypass company checks in the
+        gateway and are not enumerated here.
       security:
         - sessionCookie: []
       responses:

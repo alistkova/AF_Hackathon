@@ -25,6 +25,10 @@ x-identity-env: &identity-env
   IDENTITY_ADDR: ":8086"
   IDENTITY_DATABASE_URL: postgres://identity_svc:identity@postgres:5432/identity_db?sslmode=disable
   IDENTITY_SESSION_TTL: ${IDENTITY_SESSION_TTL:-168h}
+  IDENTITY_SESSION_PRUNE_INTERVAL: ${IDENTITY_SESSION_PRUNE_INTERVAL:-1h}
+  IDENTITY_REGISTRATION_ENABLED: ${IDENTITY_REGISTRATION_ENABLED:-true}
+  IDENTITY_LOGIN_MAX_ATTEMPTS: ${IDENTITY_LOGIN_MAX_ATTEMPTS:-5}
+  IDENTITY_LOGIN_WINDOW: ${IDENTITY_LOGIN_WINDOW:-15m}
   SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-alfa_session}
   SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
 
@@ -87,7 +91,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/healthz >/dev/null"]
       interval: 3s
@@ -104,7 +108,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
     volumes:
       - contentdata:/data/content
     healthcheck:
@@ -123,7 +127,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8086:8086"
+      - "127.0.0.1:8086:8086"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8086/healthz >/dev/null"]
       interval: 3s
@@ -163,7 +167,7 @@ services:
       agent:
         condition: service_healthy
     ports:
-      - "8083:8083"
+      - "127.0.0.1:8083:8083"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8083/healthz >/dev/null"]
       interval: 3s
@@ -182,7 +186,6 @@ services:
       INSIGHT_URL: http://insight:8083
       IDENTITY_URL: http://identity:8086
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-alfa_session}
-      SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me}
     depends_on:
       company:
         condition: service_healthy

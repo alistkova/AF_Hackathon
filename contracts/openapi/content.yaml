@@ -178,7 +178,6 @@ paths:
                   type: string
                 source_url:
                   type: string
-                  format: uri
                 published_at:
                   type: string
                   format: date
@@ -451,7 +450,6 @@ components:
           type: string
         source_url:
           type: string
-          format: uri
         full_text:
           type: string
         tags:
@@ -517,7 +515,6 @@ components:
           type: string
         source_url:
           type: string
-          format: uri
         full_text:
           type: string
         tags:

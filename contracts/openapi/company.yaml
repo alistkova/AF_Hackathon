@@ -252,7 +252,20 @@ components:
         count:
           type: integer
           format: int64
+        inbound:
+          $ref: "#/components/schemas/RelationFlow"
+        outbound:
+          $ref: "#/components/schemas/RelationFlow"
         shared_people:
+          type: integer
+          format: int64
+    RelationFlow:
+      type: object
+      required: [amount, count]
+      properties:
+        amount:
+          type: number
+        count:
           type: integer
           format: int64
     CompanyRelationList:

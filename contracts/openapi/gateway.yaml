@@ -212,9 +212,121 @@ paths:
                 $ref: "#/components/schemas/SearchResponse"
         "400":
           description: Missing query
+  /api/v1/documents:
+    post:
+      operationId: ingestDocuments
+      description: Admin only. Normalises, deduplicates and chunks documents through the content service.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/IngestItem"
+      responses:
+        "200":
+          description: Per-document ingest result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Current user is not an admin
+        "500":
+          description: Content service is unavailable
+  /api/v1/documents/pdf:
+    post:
+      operationId: uploadPdf
+      description: Admin only. Stores a PDF and ingests its extracted text.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                title:
+                  type: string
+                source_name:
+                  type: string
+                source_url:
+                  type: string
+                published_at:
+                  type: string
+                tags:
+                  type: string
+                sectors:
+                  type: string
+      responses:
+        "200":
+          description: Document stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResult"
+        "400":
+          description: Invalid file or fields
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Current user is not an admin
+        "413":
+          description: File is larger than 25 MB
+        "415":
+          description: File is not a PDF
+        "422":
+          description: Text extraction is unavailable or empty
+        "500":
+          description: Content service is unavailable
+  /api/v1/documents/{documentId}/chunks:
+    get:
+      operationId: listDocumentChunks
+      description: Admin only. Chunks of one document.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Document chunks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentChunksResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Current user is not an admin
+        "404":
+          description: Document not found
+        "500":
+          description: Content service is unavailable
   /api/v1/feed:
     get:
       operationId: getFeed
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/CompanyId"
       responses:
@@ -230,9 +342,19 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/FeedItem"
+        "400":
+          description: company_id is missing
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Company not found or not accessible to the user
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/insights/jobs:
     post:
       operationId: createInsightJob
+      security:
+        - sessionCookie: []
       requestBody:
         required: true
         content:
@@ -246,9 +368,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InsightJob"
+        "400":
+          description: Malformed request
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Company not found or not accessible to the user
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/insights/jobs/{jobId}:
     get:
       operationId: getInsightJob
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/JobId"
       responses:
@@ -258,12 +390,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InsightJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Job not found
+          description: Job not found or not accessible to the user
   /api/v1/insights/jobs/{jobId}/events:
     get:
       operationId: streamInsightJob
       description: SSE stream. Supports Last-Event-ID for resume.
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/JobId"
       responses:
@@ -273,8 +409,10 @@ paths:
             text/event-stream:
               schema:
                 type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Job not found
+          description: Job not found or not accessible to the user
 components:
   securitySchemes:
     sessionCookie:
@@ -404,6 +542,10 @@ components:
         count:
           type: integer
           format: int64
+        inbound:
+          $ref: "#/components/schemas/RelationFlow"
+        outbound:
+          $ref: "#/components/schemas/RelationFlow"
         shared_people:
           type: integer
           format: int64
@@ -568,6 +710,81 @@ components:
             $ref: "#/components/schemas/SearchHit"
         total:
           type: integer
+    RelationFlow:
+      type: object
+      required: [amount, count]
+      properties:
+        amount:
+          type: number
+        count:
+          type: integer
+          format: int64
+    IngestItem:
+      type: object
+      required: [title, full_text]
+      properties:
+        document_id:
+          type: string
+        news_id:
+          type: string
+        kind:
+          type: string
+        title:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        source_name:
+          type: string
+        source_url:
+          type: string
+        full_text:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        target_sectors:
+          type: array
+          items:
+            type: string
+    IngestResult:
+      type: object
+      required: [status, document_id, news_id, chunks]
+      properties:
+        status:
+          type: string
+          enum: [created, updated, duplicate]
+        document_id:
+          type: string
+        news_id:
+          type: string
+        chunks:
+          type: integer
+    IngestResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/IngestResult"
+    DocumentChunk:
+      type: object
+      required: [ordinal, content]
+      properties:
+        ordinal:
+          type: integer
+        content:
+          type: string
+    DocumentChunksResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentChunk"
     Error:
       type: object
       required: [code, message]
