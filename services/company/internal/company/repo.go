@@ -280,25 +280,65 @@ func (r *Repository) listRelations(ctx context.Context, companyID string) ([]Com
 	if err != nil {
 		return nil, err
 	}
+
+	type paymentAggregate struct {
+		companyID string
+		name      string
+		inbound   *RelationFlow
+		outbound  *RelationFlow
+	}
+	aggregates := make(map[string]*paymentAggregate)
 	for paymentRows.Next() {
-		item := CompanyRelation{Type: "counterparty", Relation: "payment"}
-		var outbound bool
-		if err := paymentRows.Scan(&item.CompanyID, &item.CompanyName, &outbound, &item.Amount, &item.Count); err != nil {
+		var (
+			companyID string
+			name      string
+			outbound  bool
+			amount    float64
+			count     int64
+		)
+		if err := paymentRows.Scan(&companyID, &name, &outbound, &amount, &count); err != nil {
 			paymentRows.Close()
 			return nil, err
 		}
-		if outbound {
-			item.Direction = "outbound"
-		} else {
-			item.Direction = "inbound"
+		aggregate, ok := aggregates[companyID]
+		if !ok {
+			aggregate = &paymentAggregate{companyID: companyID, name: name}
+			aggregates[companyID] = aggregate
 		}
-		items = append(items, item)
+		flow := &RelationFlow{Amount: amount, Count: count}
+		if outbound {
+			aggregate.outbound = flow
+		} else {
+			aggregate.inbound = flow
+		}
 	}
 	if err := paymentRows.Err(); err != nil {
 		paymentRows.Close()
 		return nil, err
 	}
 	paymentRows.Close()
+
+	for _, aggregate := range aggregates {
+		item := CompanyRelation{
+			CompanyID:   aggregate.companyID,
+			CompanyName: aggregate.name,
+			Type:        "counterparty",
+			Relation:    "payment",
+			Inbound:     aggregate.inbound,
+			Outbound:    aggregate.outbound,
+		}
+		switch {
+		case aggregate.outbound != nil:
+			item.Direction = "outbound"
+			item.Amount = aggregate.outbound.Amount
+			item.Count = aggregate.outbound.Count
+		case aggregate.inbound != nil:
+			item.Direction = "inbound"
+			item.Amount = aggregate.inbound.Amount
+			item.Count = aggregate.inbound.Count
+		}
+		items = append(items, item)
+	}
 
 	return mergeRelations(items), nil
 }
@@ -328,6 +368,12 @@ func mergeRelations(items []CompanyRelation) []CompanyRelation {
 		}
 		if item.SharedPeople > target.SharedPeople {
 			target.SharedPeople = item.SharedPeople
+		}
+		if item.Inbound != nil {
+			target.Inbound = item.Inbound
+		}
+		if item.Outbound != nil {
+			target.Outbound = item.Outbound
 		}
 		if item.Direction != "" {
 			target.Direction = item.Direction

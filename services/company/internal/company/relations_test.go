@@ -63,3 +63,32 @@ func TestMergeRelationsEmpty(t *testing.T) {
 		t.Fatalf("len = %d, want 0", len(merged))
 	}
 }
+
+func TestMergeRelationsKeepsBothPaymentDirections(t *testing.T) {
+	inbound := &RelationFlow{Amount: 800, Count: 15}
+	outbound := &RelationFlow{Amount: 1250, Count: 24}
+	input := []CompanyRelation{
+		{CompanyID: "a", CompanyName: "Alpha", Type: "group", Relation: "same_group"},
+		{
+			CompanyID: "a", CompanyName: "Alpha", Type: "counterparty", Relation: "payment",
+			Direction: "outbound", Amount: outbound.Amount, Count: outbound.Count,
+			Inbound: inbound, Outbound: outbound,
+		},
+	}
+
+	merged := mergeRelations(input)
+
+	if len(merged) != 1 {
+		t.Fatalf("len = %d, want 1", len(merged))
+	}
+	item := merged[0]
+	if item.Inbound == nil || item.Inbound.Amount != 800 || item.Inbound.Count != 15 {
+		t.Fatalf("inbound = %+v, want 800/15", item.Inbound)
+	}
+	if item.Outbound == nil || item.Outbound.Amount != 1250 || item.Outbound.Count != 24 {
+		t.Fatalf("outbound = %+v, want 1250/24", item.Outbound)
+	}
+	if item.Direction != "outbound" || item.Amount != 1250 {
+		t.Fatalf("primary payment = %s/%v, want outbound/1250", item.Direction, item.Amount)
+	}
+}
