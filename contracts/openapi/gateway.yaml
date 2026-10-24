@@ -32,14 +32,54 @@ paths:
     get:
       operationId: getCompany
       parameters:
-        - $ref: "#/components/parameters/CompanyId"
+        - $ref: "#/components/parameters/PathCompanyId"
       responses:
         "200":
-          description: Company profile
+          description: Company profile with people and relations
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Company"
+                $ref: "#/components/schemas/CompanyDetails"
+        "404":
+          description: Company not found
+  /api/v1/companies/{companyId}/people:
+    get:
+      operationId: listCompanyPeople
+      parameters:
+        - $ref: "#/components/parameters/PathCompanyId"
+      responses:
+        "200":
+          description: Company people list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CompanyPerson"
+        "404":
+          description: Company not found
+  /api/v1/companies/{companyId}/relations:
+    get:
+      operationId: listCompanyRelations
+      parameters:
+        - $ref: "#/components/parameters/PathCompanyId"
+      responses:
+        "200":
+          description: Company relations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CompanyRelation"
         "404":
           description: Company not found
   /api/v1/feed:
@@ -113,6 +153,12 @@ components:
       required: true
       schema:
         type: string
+    PathCompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema:
+        type: string
     JobId:
       name: jobId
       in: path
@@ -136,9 +182,92 @@ components:
           type: string
         description:
           type: string
+        group_id:
+          type: string
+        okved_code:
+          type: string
+        okved_name:
+          type: string
+        client_type:
+          type: string
+        revenue:
+          type: string
+        city:
+          type: string
+        products:
+          type: object
+          additionalProperties:
+            type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
         created_at:
           type: string
           format: date-time
+    Person:
+      type: object
+      required: [id, full_name, role, created_at]
+      properties:
+        id:
+          type: string
+        full_name:
+          type: string
+        role:
+          type: string
+        city:
+          type: string
+        region:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CompanyPerson:
+      type: object
+      required: [person, relation]
+      properties:
+        person:
+          $ref: "#/components/schemas/Person"
+        relation:
+          type: string
+    CompanyRelation:
+      type: object
+      required: [company_id, company_name, type, relation]
+      properties:
+        company_id:
+          type: string
+        company_name:
+          type: string
+        type:
+          type: string
+          enum: [group, shared_person, counterparty]
+        relation:
+          type: string
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        amount:
+          type: number
+        count:
+          type: integer
+          format: int64
+        shared_people:
+          type: integer
+          format: int64
+    CompanyDetails:
+      allOf:
+        - $ref: "#/components/schemas/Company"
+        - type: object
+          required: [people, relations]
+          properties:
+            people:
+              type: array
+              items:
+                $ref: "#/components/schemas/CompanyPerson"
+            relations:
+              type: array
+              items:
+                $ref: "#/components/schemas/CompanyRelation"
     EventContext:
       type: object
       required: [id, title]

@@ -2,6 +2,7 @@ openapi: 3.1.0
 info:
   title: Company Service API
   version: 0.1.0
+  description: Company profiles and their business context.
 servers:
   - url: http://company:8081
 paths:
@@ -11,23 +12,238 @@ paths:
       responses:
         "200":
           description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+                  service:
+                    type: string
+                    const: company
   /api/v1/companies:
     get:
       operationId: listCompanies
       responses:
         "200":
-          description: Company list
+          description: Company list ordered by name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyList"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/v1/companies/{companyId}:
     get:
       operationId: getCompany
       parameters:
-        - name: companyId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: "#/components/parameters/CompanyId"
       responses:
         "200":
-          description: Company profile
+          description: Company profile with people and relations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyDetails"
         "404":
-          description: Not found
+          description: Company not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/companies/{companyId}/people:
+    get:
+      operationId: listCompanyPeople
+      parameters:
+        - $ref: "#/components/parameters/CompanyId"
+      responses:
+        "200":
+          description: Company people list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyPeopleList"
+        "404":
+          description: Company not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/companies/{companyId}/relations:
+    get:
+      operationId: listCompanyRelations
+      parameters:
+        - $ref: "#/components/parameters/CompanyId"
+      responses:
+        "200":
+          description: Company relations from groups, shared people and payments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyRelationList"
+        "404":
+          description: Company not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  parameters:
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  responses:
+    InternalError:
+      description: Company service is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Person:
+      type: object
+      required: [id, full_name, role, created_at]
+      properties:
+        id:
+          type: string
+        full_name:
+          type: string
+        role:
+          type: string
+        city:
+          type: string
+        region:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CompanyPerson:
+      type: object
+      required: [person, relation]
+      properties:
+        person:
+          $ref: "#/components/schemas/Person"
+        relation:
+          type: string
+    Company:
+      type: object
+      required: [id, name, inn, industry, region, description, created_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        inn:
+          type: string
+        industry:
+          type: string
+        region:
+          type: string
+        description:
+          type: string
+        group_id:
+          type: string
+        okved_code:
+          type: string
+        okved_name:
+          type: string
+        client_type:
+          type: string
+        revenue:
+          type: string
+        city:
+          type: string
+        products:
+          type: object
+          additionalProperties:
+            type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+    CompanyDetails:
+      allOf:
+        - $ref: "#/components/schemas/Company"
+        - type: object
+          required: [people, relations]
+          properties:
+            people:
+              type: array
+              items:
+                $ref: "#/components/schemas/CompanyPerson"
+            relations:
+              type: array
+              items:
+                $ref: "#/components/schemas/CompanyRelation"
+    CompanyList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Company"
+    CompanyPeopleList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompanyPerson"
+    CompanyRelation:
+      type: object
+      required: [company_id, company_name, type, relation]
+      properties:
+        company_id:
+          type: string
+        company_name:
+          type: string
+        type:
+          type: string
+          enum: [group, shared_person, counterparty]
+        relation:
+          type: string
+        direction:
+          type: string
+          enum: [inbound, outbound]
+        amount:
+          type: number
+        count:
+          type: integer
+          format: int64
+        shared_people:
+          type: integer
+          format: int64
+    CompanyRelationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompanyRelation"
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

@@ -147,6 +147,29 @@ make rag-clean    # remove the local processed-files cache (vectors stay in the 
 - The agent only reasons over the evidence it receives and returns source IDs from that evidence.
 - Public SSE goes through gateway -> insight. Agent SSE is internal.
 
+## Company API
+
+The company service owns company profiles in `company_db`. Clients call it through the gateway:
+
+```bash
+curl -s localhost:8080/api/v1/companies
+curl -s localhost:8080/api/v1/companies/magnit
+curl -s localhost:8080/api/v1/companies/magnit/relations
+```
+
+`GET /api/v1/companies` returns `{"items":[...]}` ordered by name. `GET /api/v1/companies/{companyId}` returns one company with `people` and `relations`, or a `404` error. Relations resolve company groups, shared people and payment counterparties from `company_db`.
+
+Demo data is loaded from `seed/companies.csv` by `make seed`. The hackathon datasets are imported with the same command:
+
+```bash
+go run ./services/company/cmd/seed \
+  -file path/to/df_Uid_data_hack.csv \
+  -people path/to/df_Fid_Uid_link_hack.csv \
+  -payments path/to/payments.csv
+```
+
+Service details, the data model, CSV format and local debugging steps are in [services/company/README.md](services/company/README.md). The service contract is [contracts/openapi/company.yaml](contracts/openapi/company.yaml).
+
 ## Content API
 
 `GET /api/v1/news` returns the AI team news format: `news_id`, `title`, `published_at`, `source_name`, `source_url`, `full_text`, `tags`, `target_sectors`. The schema is in `contracts/openapi/content.yaml`.

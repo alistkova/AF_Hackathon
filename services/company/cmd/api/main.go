@@ -48,6 +48,8 @@ func main() {
 	v1 := router.Group("/api/v1")
 	v1.GET("/companies", handler.List)
 	v1.GET("/companies/:id", handler.Get)
+	v1.GET("/companies/:id/people", handler.People)
+	v1.GET("/companies/:id/relations", handler.Relations)
 
 	server := &http.Server{
 		Addr:              config.String("COMPANY_ADDR", ":8081"),

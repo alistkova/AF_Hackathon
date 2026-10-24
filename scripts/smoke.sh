@@ -17,6 +17,9 @@ curl -fsS "$BASE_URL/healthz" >/dev/null
 companies="$(curl -fsS "$BASE_URL/api/v1/companies")"
 company_id="$(python3 -c 'import json,sys; items=json.load(sys.stdin)["items"]; assert items; print(items[0]["id"])' <<<"$companies")"
 
+profile="$(curl -fsS "$BASE_URL/api/v1/companies/$company_id")"
+python3 -c 'import json,sys; item=json.load(sys.stdin); assert item["id"] == sys.argv[1] and item["name"]' "$company_id" <<<"$profile"
+
 payload="$(python3 -c 'import json,sys; print(json.dumps({"company_id": sys.argv[1], "event": {"id": "smoke-event", "title": "Проверка SSE", "summary": "Сквозной тест gateway, insight и агента", "source": "smoke", "url": "https://example.com/smoke"}}, ensure_ascii=False))' "$company_id")"
 
 job="$(curl -fsS -X POST "$BASE_URL/api/v1/insights/jobs" \
