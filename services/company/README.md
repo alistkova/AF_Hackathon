@@ -66,9 +66,8 @@ Profile response is a company object with `people` and `relations`:
     }
   ],
   "relations": [
-    {"company_id": "U-2", "company_name": "U-2", "type": "group", "relation": "same_group"},
-    {"company_id": "U-3", "company_name": "U-3", "type": "shared_person", "relation": "shared_person", "shared_people": 1},
-    {"company_id": "U-4", "company_name": "U-4", "type": "counterparty", "relation": "payment", "direction": "outbound", "amount": 1250000.5, "count": 12}
+    {"company_id": "U-2", "company_name": "U-2", "type": "group", "types": ["group"], "relation": "same_group"},
+    {"company_id": "U-3", "company_name": "U-3", "type": "group", "types": ["group", "shared_person", "counterparty"], "relation": "same_group", "direction": "outbound", "amount": 1250000.5, "count": 12, "shared_people": 1}
   ]
 }
 ```
@@ -78,6 +77,14 @@ Relations are derived on read:
 - `group` — companies with the same non-empty `group_id`;
 - `shared_person` — companies that share at least one linked person;
 - `counterparty` — companies connected by a payments row, with `direction`, `amount` and `count`.
+
+A company can qualify for several types at once. It is returned once per company: `type` and
+`relation` carry the strongest match (`group` > `shared_person` > `counterparty`), `types`
+lists every match, and the type-specific fields are merged.
+
+`GET /api/v1/companies` accepts an optional `ids` filter (`?ids=magnit&ids=sber` or
+`?ids=magnit,sber`). The gateway sets it to the companies the caller may read; internal
+callers omit it and get every company.
 
 Errors use the shared shape:
 

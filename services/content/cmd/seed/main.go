@@ -6,6 +6,7 @@ import (
 	"flag"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/alfa-hack/alfa-hack/internal/platform/config"
 	"github.com/alfa-hack/alfa-hack/internal/platform/db"
@@ -38,22 +39,76 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := content.NewRepository(pool).UpsertNews(ctx, items); err != nil {
-		logger.Error("upsert news", "error", err)
-		os.Exit(1)
+	repo := content.NewRepository(pool)
+	created, updated, duplicated, chunks := 0, 0, 0, 0
+	for _, item := range items {
+		result, err := repo.IngestDocument(ctx, item)
+		if err != nil {
+			logger.Error("ingest news", "error", err, "news_id", item.NewsID)
+			os.Exit(1)
+		}
+		chunks += result.Chunks
+		switch result.Status {
+		case content.IngestCreated:
+			created++
+		case content.IngestUpdated:
+			updated++
+		case content.IngestDuplicate:
+			duplicated++
+		}
 	}
 
-	logger.Info("news seeded", "count", len(items))
+	logger.Info("news seeded",
+		"created", created,
+		"updated", updated,
+		"duplicates", duplicated,
+		"chunks", chunks,
+	)
 }
 
-func readNews(path string) ([]content.NewsItem, error) {
+func readNews(path string) ([]content.IngestInput, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var items []content.NewsItem
-	if err := json.Unmarshal(body, &items); err != nil {
+	var payload []struct {
+		NewsID        string   `json:"news_id"`
+		Title         string   `json:"title"`
+		PublishedAt   string   `json:"published_at"`
+		SourceName    string   `json:"source_name"`
+		SourceURL     string   `json:"source_url"`
+		FullText      string   `json:"full_text"`
+		Tags          []string `json:"tags"`
+		TargetSectors []string `json:"target_sectors"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err
 	}
+
+	items := make([]content.IngestInput, 0, len(payload))
+	for _, entry := range payload {
+		items = append(items, content.IngestInput{
+			NewsID:        entry.NewsID,
+			Kind:          "news",
+			Title:         entry.Title,
+			SourceName:    entry.SourceName,
+			SourceURL:     entry.SourceURL,
+			FullText:      entry.FullText,
+			Tags:          entry.Tags,
+			TargetSectors: entry.TargetSectors,
+			PublishedAt:   parseTime(entry.PublishedAt),
+		})
+	}
 	return items, nil
+}
+
+func parseTime(value string) time.Time {
+	if value == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
 }

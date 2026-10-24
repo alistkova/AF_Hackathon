@@ -27,6 +27,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Companies the current user may read. Admins see every company. */
         get: operations["listCompanies"];
         put?: never;
         post?: never;
@@ -44,6 +45,139 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getCompany"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/companies/{companyId}/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listCompanyPeople"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/companies/{companyId}/relations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listCompanyRelations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/news": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Documents and news. Filters combine with AND; `X-Total-Count` carries the total. */
+        get: operations["listNews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/news/{newsId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getNews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Ranked full-text search across news and PDF documents. */
+        get: operations["searchDocuments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admin only. Normalises, deduplicates and chunks documents through the content service. */
+        post: operations["ingestDocuments"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admin only. Stores a PDF and ingests its extracted text. */
+        post: operations["uploadPdf"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{documentId}/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Admin only. Chunks of one document. */
+        get: operations["listDocumentChunks"];
         put?: never;
         post?: never;
         delete?: never;
@@ -128,8 +262,54 @@ export interface components {
             industry?: string;
             region?: string;
             description?: string;
+            group_id?: string;
+            okved_code?: string;
+            okved_name?: string;
+            client_type?: string;
+            revenue?: string;
+            city?: string;
+            products?: {
+                [key: string]: string;
+            };
+            attributes?: {
+                [key: string]: string;
+            };
             /** Format: date-time */
             created_at?: string;
+        };
+        Person: {
+            id: string;
+            full_name: string;
+            role: string;
+            city?: string;
+            region?: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CompanyPerson: {
+            person: components["schemas"]["Person"];
+            relation: string;
+        };
+        CompanyRelation: {
+            company_id: string;
+            company_name: string;
+            /** @enum {string} */
+            type: "group" | "shared_person" | "counterparty";
+            types: ("group" | "shared_person" | "counterparty")[];
+            relation: string;
+            /** @enum {string} */
+            direction?: "inbound" | "outbound";
+            amount?: number;
+            /** Format: int64 */
+            count?: number;
+            inbound?: components["schemas"]["RelationFlow"];
+            outbound?: components["schemas"]["RelationFlow"];
+            /** Format: int64 */
+            shared_people?: number;
+        };
+        CompanyDetails: components["schemas"]["Company"] & {
+            people: components["schemas"]["CompanyPerson"][];
+            relations: components["schemas"]["CompanyRelation"][];
         };
         EventContext: {
             id: string;
@@ -174,10 +354,88 @@ export interface components {
             actions: string[];
             confidence: number;
         };
+        NewsItem: {
+            document_id: string;
+            news_id: string;
+            title: string;
+            /** Format: date-time */
+            published_at: string;
+            source_name: string;
+            source_url: string;
+            full_text?: string;
+            tags: string[];
+            target_sectors: string[];
+        };
+        SearchHit: components["schemas"]["NewsItem"] & {
+            rank: number;
+        };
+        SearchResponse: {
+            items: components["schemas"]["SearchHit"][];
+            total: number;
+        };
+        RelationFlow: {
+            amount: number;
+            /** Format: int64 */
+            count: number;
+        };
+        IngestItem: {
+            document_id?: string;
+            news_id?: string;
+            kind?: string;
+            title: string;
+            /** Format: date-time */
+            published_at?: string;
+            source_name?: string;
+            source_url?: string;
+            full_text: string;
+            tags?: string[];
+            target_sectors?: string[];
+        };
+        IngestResult: {
+            /** @enum {string} */
+            status: "created" | "updated" | "duplicate";
+            document_id: string;
+            news_id: string;
+            chunks: number;
+        };
+        IngestResponse: {
+            items: components["schemas"]["IngestResult"][];
+        };
+        DocumentChunk: {
+            ordinal: number;
+            content: string;
+        };
+        DocumentChunksResponse: {
+            items: components["schemas"]["DocumentChunk"][];
+        };
+        Error: {
+            code: string;
+            message: string;
+        };
     };
-    responses: never;
+    responses: {
+        /** @description Session is missing or expired */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Identity service is unavailable */
+        IdentityUnavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+    };
     parameters: {
         CompanyId: string;
+        PathCompanyId: string;
         JobId: string;
     };
     requestBodies: never;
@@ -224,12 +482,118 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Unauthorized"];
+            503: components["responses"]["IdentityUnavailable"];
         };
     };
     getCompany: {
         parameters: {
-            query: {
-                company_id: components["parameters"]["CompanyId"];
+            query?: never;
+            header?: never;
+            path: {
+                companyId: components["parameters"]["PathCompanyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Company profile with people and relations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyDetails"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Company not found or not accessible to the user */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            503: components["responses"]["IdentityUnavailable"];
+        };
+    };
+    listCompanyPeople: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: components["parameters"]["PathCompanyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Company people list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["CompanyPerson"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Company not found or not accessible to the user */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            503: components["responses"]["IdentityUnavailable"];
+        };
+    };
+    listCompanyRelations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: components["parameters"]["PathCompanyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Company relations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["CompanyRelation"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Company not found or not accessible to the user */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            503: components["responses"]["IdentityUnavailable"];
+        };
+    };
+    listNews: {
+        parameters: {
+            query?: {
+                kind?: string;
+                sector?: string;
+                tag?: string;
+                source?: string;
+                from?: string;
+                to?: string;
+                limit?: number;
+                offset?: number;
             };
             header?: never;
             path?: never;
@@ -237,17 +601,240 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Company profile */
+            /** @description Documents */
+            200: {
+                headers: {
+                    "X-Total-Count"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsItem"][];
+                };
+            };
+        };
+    };
+    getNews: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                newsId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Company"];
+                    "application/json": components["schemas"]["NewsItem"];
                 };
             };
-            /** @description Company not found */
+            /** @description Document not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    searchDocuments: {
+        parameters: {
+            query: {
+                q: string;
+                kind?: string;
+                sector?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ranked matches */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchResponse"];
+                };
+            };
+            /** @description Missing query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ingestDocuments: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    items: components["schemas"]["IngestItem"][];
+                };
+            };
+        };
+        responses: {
+            /** @description Per-document ingest result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestResponse"];
+                };
+            };
+            /** @description Invalid payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Current user is not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Content service is unavailable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    uploadPdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    title?: string;
+                    source_name?: string;
+                    source_url?: string;
+                    published_at?: string;
+                    tags?: string;
+                    sectors?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Document stored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestResult"];
+                };
+            };
+            /** @description Invalid file or fields */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Current user is not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File is larger than 25 MB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File is not a PDF */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Text extraction is unavailable or empty */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Content service is unavailable */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listDocumentChunks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document chunks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentChunksResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Current user is not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Content service is unavailable */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -277,6 +864,22 @@ export interface operations {
                     };
                 };
             };
+            /** @description company_id is missing */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Company not found or not accessible to the user */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            503: components["responses"]["IdentityUnavailable"];
         };
     };
     createInsightJob: {
@@ -301,6 +904,22 @@ export interface operations {
                     "application/json": components["schemas"]["InsightJob"];
                 };
             };
+            /** @description Malformed request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Company not found or not accessible to the user */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            503: components["responses"]["IdentityUnavailable"];
         };
     };
     getInsightJob: {
@@ -323,7 +942,8 @@ export interface operations {
                     "application/json": components["schemas"]["InsightJob"];
                 };
             };
-            /** @description Job not found */
+            401: components["responses"]["Unauthorized"];
+            /** @description Job not found or not accessible to the user */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -352,7 +972,8 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
-            /** @description Job not found */
+            401: components["responses"]["Unauthorized"];
+            /** @description Job not found or not accessible to the user */
             404: {
                 headers: {
                     [name: string]: unknown;

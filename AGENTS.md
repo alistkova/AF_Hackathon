@@ -48,7 +48,8 @@ Allowed types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `ci`. Do not 
 
 ## Service map
 
-- `services/gateway`: public API, request IDs, reverse proxy, SSE relay.
+- `services/gateway`: public API, request IDs, auth guard, reverse proxy, SSE relay.
+- `services/identity`: users, sessions and company access, `identity_db`.
 - `services/company`: companies and relations, `company_db`.
 - `services/content`: documents and chunks, `content_db`, MinIO.
 - `services/insight`: feed, jobs, SSE, agent orchestration, `insight_db`.

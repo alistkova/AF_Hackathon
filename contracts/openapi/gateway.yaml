@@ -15,6 +15,9 @@ paths:
   /api/v1/companies:
     get:
       operationId: listCompanies
+      description: Companies the current user may read. Admins see every company.
+      security:
+        - sessionCookie: []
       responses:
         "200":
           description: Company list
@@ -28,9 +31,15 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Company"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/companies/{companyId}:
     get:
       operationId: getCompany
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/PathCompanyId"
       responses:
@@ -40,11 +49,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CompanyDetails"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Company not found
+          description: Company not found or not accessible to the user
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/companies/{companyId}/people:
     get:
       operationId: listCompanyPeople
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/PathCompanyId"
       responses:
@@ -60,11 +75,17 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/CompanyPerson"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Company not found
+          description: Company not found or not accessible to the user
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/companies/{companyId}/relations:
     get:
       operationId: listCompanyRelations
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/PathCompanyId"
       responses:
@@ -80,11 +101,232 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/CompanyRelation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Company not found
+          description: Company not found or not accessible to the user
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
+  /api/v1/news:
+    get:
+      operationId: listNews
+      description: Documents and news. Filters combine with AND; `X-Total-Count` carries the total.
+      parameters:
+        - name: kind
+          in: query
+          schema:
+            type: string
+        - name: sector
+          in: query
+          schema:
+            type: string
+        - name: tag
+          in: query
+          schema:
+            type: string
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: Documents
+          headers:
+            X-Total-Count:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NewsItem"
+  /api/v1/news/{newsId}:
+    get:
+      operationId: getNews
+      parameters:
+        - name: newsId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsItem"
+        "404":
+          description: Document not found
+  /api/v1/search:
+    get:
+      operationId: searchDocuments
+      description: Ranked full-text search across news and PDF documents.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: kind
+          in: query
+          schema:
+            type: string
+        - name: sector
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Ranked matches
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          description: Missing query
+  /api/v1/documents:
+    post:
+      operationId: ingestDocuments
+      description: Admin only. Normalises, deduplicates and chunks documents through the content service.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/IngestItem"
+      responses:
+        "200":
+          description: Per-document ingest result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResponse"
+        "400":
+          description: Invalid payload
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Current user is not an admin
+        "500":
+          description: Content service is unavailable
+  /api/v1/documents/pdf:
+    post:
+      operationId: uploadPdf
+      description: Admin only. Stores a PDF and ingests its extracted text.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                title:
+                  type: string
+                source_name:
+                  type: string
+                source_url:
+                  type: string
+                published_at:
+                  type: string
+                tags:
+                  type: string
+                sectors:
+                  type: string
+      responses:
+        "200":
+          description: Document stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResult"
+        "400":
+          description: Invalid file or fields
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Current user is not an admin
+        "413":
+          description: File is larger than 25 MB
+        "415":
+          description: File is not a PDF
+        "422":
+          description: Text extraction is unavailable or empty
+        "500":
+          description: Content service is unavailable
+  /api/v1/documents/{documentId}/chunks:
+    get:
+      operationId: listDocumentChunks
+      description: Admin only. Chunks of one document.
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Document chunks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentChunksResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Current user is not an admin
+        "404":
+          description: Document not found
+        "500":
+          description: Content service is unavailable
   /api/v1/feed:
     get:
       operationId: getFeed
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/CompanyId"
       responses:
@@ -100,9 +342,19 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/FeedItem"
+        "400":
+          description: company_id is missing
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Company not found or not accessible to the user
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/insights/jobs:
     post:
       operationId: createInsightJob
+      security:
+        - sessionCookie: []
       requestBody:
         required: true
         content:
@@ -116,9 +368,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InsightJob"
+        "400":
+          description: Malformed request
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Company not found or not accessible to the user
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/insights/jobs/{jobId}:
     get:
       operationId: getInsightJob
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/JobId"
       responses:
@@ -128,12 +390,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InsightJob"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Job not found
+          description: Job not found or not accessible to the user
   /api/v1/insights/jobs/{jobId}/events:
     get:
       operationId: streamInsightJob
       description: SSE stream. Supports Last-Event-ID for resume.
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/JobId"
       responses:
@@ -143,9 +409,29 @@ paths:
             text/event-stream:
               schema:
                 type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Job not found
+          description: Job not found or not accessible to the user
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: alfa_session
+  responses:
+    Unauthorized:
+      description: Session is missing or expired
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    IdentityUnavailable:
+      description: Identity service is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   parameters:
     CompanyId:
       name: company_id
@@ -232,7 +518,7 @@ components:
           type: string
     CompanyRelation:
       type: object
-      required: [company_id, company_name, type, relation]
+      required: [company_id, company_name, type, types, relation]
       properties:
         company_id:
           type: string
@@ -241,6 +527,11 @@ components:
         type:
           type: string
           enum: [group, shared_person, counterparty]
+        types:
+          type: array
+          items:
+            type: string
+            enum: [group, shared_person, counterparty]
         relation:
           type: string
         direction:
@@ -251,6 +542,10 @@ components:
         count:
           type: integer
           format: int64
+        inbound:
+          $ref: "#/components/schemas/RelationFlow"
+        outbound:
+          $ref: "#/components/schemas/RelationFlow"
         shared_people:
           type: integer
           format: int64
@@ -370,3 +665,131 @@ components:
           type: number
           minimum: 0
           maximum: 1
+    NewsItem:
+      type: object
+      required: [document_id, news_id, title, published_at, source_name, source_url, tags, target_sectors]
+      properties:
+        document_id:
+          type: string
+        news_id:
+          type: string
+        title:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        source_name:
+          type: string
+        source_url:
+          type: string
+        full_text:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        target_sectors:
+          type: array
+          items:
+            type: string
+    SearchHit:
+      allOf:
+        - $ref: "#/components/schemas/NewsItem"
+        - type: object
+          required: [rank]
+          properties:
+            rank:
+              type: number
+    SearchResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchHit"
+        total:
+          type: integer
+    RelationFlow:
+      type: object
+      required: [amount, count]
+      properties:
+        amount:
+          type: number
+        count:
+          type: integer
+          format: int64
+    IngestItem:
+      type: object
+      required: [title, full_text]
+      properties:
+        document_id:
+          type: string
+        news_id:
+          type: string
+        kind:
+          type: string
+        title:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        source_name:
+          type: string
+        source_url:
+          type: string
+        full_text:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        target_sectors:
+          type: array
+          items:
+            type: string
+    IngestResult:
+      type: object
+      required: [status, document_id, news_id, chunks]
+      properties:
+        status:
+          type: string
+          enum: [created, updated, duplicate]
+        document_id:
+          type: string
+        news_id:
+          type: string
+        chunks:
+          type: integer
+    IngestResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/IngestResult"
+    DocumentChunk:
+      type: object
+      required: [ordinal, content]
+      properties:
+        ordinal:
+          type: integer
+        content:
+          type: string
+    DocumentChunksResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentChunk"
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

@@ -9,15 +9,16 @@ Browser
    |  HTTP + SSE
    v
 Gateway (Go/Gin)
+   |-- Identity (Go) -> PostgreSQL identity_db
    |-- Company (Go)  -> PostgreSQL company_db
-   |-- Content (Go)  -> PostgreSQL content_db + MinIO
+   |-- Content (Go)  -> PostgreSQL content_db + local document storage
    |-- Insight (Go)  -> PostgreSQL insight_db
    |                      |
    |                      +-- Agent (Python/FastAPI, SSE)
    +-- Web (React + TypeScript + Tailwind)
 ```
 
-One PostgreSQL instance with separate databases and roles per service. Redis is provisioned for later queues; MinIO is an optional Compose profile for raw documents. The agent is stateless: insight owns retrieval, persistence, retries and the browser SSE stream.
+One PostgreSQL instance with separate databases and roles per service. Redis is provisioned for later queues; MinIO remains an optional Compose profile, while the content service stores raw PDFs on the `contentdata` volume. The agent is stateless: insight owns retrieval, persistence, retries and the browser SSE stream.
 The agent includes a RAG system for Russian financial news PDFs with incremental updates.
 
 ## Quick start
@@ -31,7 +32,16 @@ cp .env.example .env
 make demo
 ```
 
-Open <http://localhost:3000>. The demo starts Postgres, Redis, all Go services, the Python agent and the web app, then seeds companies and news. MinIO is an optional Compose profile because its public registry requires separate access; the current content scaffold does not use object storage yet.
+Open <http://localhost:3000>. The demo starts Postgres, Redis, all Go services, the Python agent and the web app, then seeds companies, people, payments and news. MinIO is an optional Compose profile because its public registry requires separate access; the content service stores raw PDFs on a local volume instead.
+
+`make demo` also creates two demo accounts and prints them:
+
+| Account | Role | Sees |
+| --- | --- | --- |
+| `demo-admin@alfa.local` | `admin` | every company, can grant access |
+| `demo-client@alfa.local` | `analyst` | only the companies granted to it |
+
+The password for both is `demo-password` (`DEMO_PASSWORD`). Override the emails with `DEMO_ADMIN_EMAIL` and `DEMO_CLIENT_EMAIL`, and the granted companies with `DEMO_CLIENT_COMPANIES`. `make demo-users` recreates the accounts on an already running stack.
 
 Reset an empty demo:
 
@@ -170,9 +180,47 @@ go run ./services/company/cmd/seed \
 
 Service details, the data model, CSV format and local debugging steps are in [services/company/README.md](services/company/README.md). The service contract is [contracts/openapi/company.yaml](contracts/openapi/company.yaml).
 
+## Identity API
+
+The identity service owns users, sessions and company access in `identity_db`. The gateway forwards `/api/v1/auth`, `/api/v1/me` and `/api/v1/access` to it:
+
+```bash
+curl -s -X POST localhost:8080/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"owner@example.com","password":"secret-pass"}'
+
+curl -s -c /tmp/alfa.jar -X POST localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"owner@example.com","password":"secret-pass"}'
+
+curl -s -b /tmp/alfa.jar localhost:8080/api/v1/me
+curl -s -b /tmp/alfa.jar localhost:8080/api/v1/me/companies
+```
+
+Passwords are bcrypt hashes and only SHA-256 token hashes are persisted. Sessions live in the `alfa_session` cookie (`SESSION_COOKIE_NAME`) or in an `Authorization: Bearer` header. The first registered user becomes `admin`, later users become `analyst`; granting and revoking company access requires `admin`. Login is rate-limited (`IDENTITY_LOGIN_MAX_ATTEMPTS` per `IDENTITY_LOGIN_WINDOW`), and expired sessions are pruned in the background.
+
+Registration is controlled by `IDENTITY_REGISTRATION_ENABLED`. It is `true` in the demo `.env` so `scripts/bootstrap-users.sh` can create the demo accounts; set it to `false` after bootstrapping a real deployment.
+
+`/api/v1/companies` requires the same session. Without it the gateway returns `401`; an `analyst` only gets the companies granted to it, an `admin` gets everything. `/api/v1/me/companies` lists explicit grants only; admins are not enumerated there because the gateway bypasses the check for them. See [Access model](#access-model).
+
+Service details and configuration are in [services/identity/README.md](services/identity/README.md). The service contract is [contracts/openapi/identity.yaml](contracts/openapi/identity.yaml).
+
 ## Content API
 
-`GET /api/v1/news` returns the AI team news format: `news_id`, `title`, `published_at`, `source_name`, `source_url`, `full_text`, `tags`, `target_sectors`. The schema is in `contracts/openapi/content.yaml`.
+`GET /api/v1/news` returns the AI team news format (`document_id`, `news_id`, `title`, `published_at`, `source_name`, `source_url`, `full_text`, `tags`, `target_sectors`) and accepts `kind`, `sector`, `tag`, `source`, `from`, `to`, `limit` and `offset`. The total is returned in `X-Total-Count`.
+
+Ingestion goes through `POST /api/v1/documents` (JSON) or `POST /api/v1/documents/pdf` (multipart) and requires an admin session. Both normalise the text, reject duplicates by canonical URL and by a content hash, and split the body into overlapping chunks. Ranked search across news and PDFs is `GET /api/v1/search?q=` and is public.
+
+```bash
+curl -s -b /tmp/alfa.jar -X POST localhost:8080/api/v1/documents -H 'Content-Type: application/json' \
+  -d '{"items":[{"news_id":"n1","title":"Ставка","full_text":"..."}]}'
+
+curl -s -b /tmp/alfa.jar -X POST localhost:8080/api/v1/documents/pdf -F 'file=@material.pdf' -F 'source_name=Альфа-Банк'
+
+curl -s 'localhost:8080/api/v1/search?q=ключевая%20ставка'
+```
+
+PDF text extraction uses `pdftotext` from poppler-utils, which the content image installs. Raw files land in the `contentdata` volume. The schema is in `contracts/openapi/content.yaml`, the details are in [services/content/README.md](services/content/README.md).
 
 RAG chunks are stored by the content service as well: `POST /api/v1/rag/chunks` upserts embedded chunks, `POST /api/v1/rag/chunks/search` and `POST /api/v1/rag/chunks/list` query them by metadata, `GET /api/v1/rag/chunks/count` counts them and `DELETE /api/v1/rag/chunks` clears the table. The agent uses these endpoints and never opens `content_db`.
 
@@ -203,22 +251,36 @@ contracts/          OpenAPI + SSE event schemas
 services/gateway/   public BFF, proxying, SSE relay
 services/company/   companies, people, relations
 services/content/   documents and chunks
+services/identity/  users, sessions, company access
 services/insight/   feed, jobs, SSE, agent orchestration
 services/agent/     Python/FastAPI agent
 services/agent/app/rag_system/   RAG system for Russian financial news
 web/                React + TypeScript + Tailwind
 infra/              Postgres roles/databases, MinIO
-seed/               demo companies and news
-scripts/            dev, demo, migrate, seed, smoke, gen
+seed/               demo companies, people, payments and news
+scripts/            dev, demo, migrate, seed, bootstrap-users, smoke, gen
 ```
 
 ## Current scaffold status
 
 - M0 vertical slice: gateway, company, web, Compose, seed, smoke.
+- M1 complete: identity with sessions, per-user company access enforced in the gateway, CSV import of companies, people and payments, company profiles and relations.
 - SSE job flow works end to end with the Python stub agent.
-- Content document storage and ingestion worker are scaffolds.
+- Content owns news and PDF documents: ingestion with deduplication, chunking, full-text search and raw file storage.
+- The ingestion worker is still a no-op; documents arrive through the API and the seed command.
 - Insight jobs are in-memory for now; `analysis_jobs`/`analysis_events` tables are reserved for durable persistence.
-- Identity is deferred; `identity_db` and role exist for later extraction.
+- Identity is implemented: register, login, logout, `/me`, and per-user company access with admin-only grants.
+
+## Access model
+
+The gateway validates the session against identity and never trusts the client:
+
+- `admin` sees every company.
+- `analyst` sees only the companies in `company_access`.
+- The company list is filtered by forwarding the allowed ids to the company service; a detail request for a company outside that set returns `404`.
+- `/api/v1/feed` and `/api/v1/insights/*` also require a session. The feed checks `company_id`; job creation checks the body and job reads check the stored `company_id`, so a forbidden company returns `404`.
+- `/api/v1/documents*` requires an admin session. `/api/v1/news` and `/api/v1/search` are public.
+- Company, content, insight and identity ports are published on `127.0.0.1` for local debugging. Only the gateway is reachable externally, so public traffic must go through it.
 
 ## Contributing
 

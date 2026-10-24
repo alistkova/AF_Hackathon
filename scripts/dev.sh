@@ -11,6 +11,8 @@ set -a
 source .env
 set +a
 
+export IDENTITY_REGISTRATION_ENABLED="${IDENTITY_REGISTRATION_ENABLED:-true}"
+
 if [[ "${SKIP_INFRA:-0}" != "1" ]]; then
   docker compose -f compose.dev.yaml up -d --wait
 fi
@@ -30,6 +32,8 @@ go run ./services/content/cmd/api &
 pids+=("$!")
 go run ./services/insight/cmd/api &
 pids+=("$!")
+go run ./services/identity/cmd/api &
+pids+=("$!")
 go run ./services/gateway/cmd/api &
 pids+=("$!")
 
@@ -46,6 +50,7 @@ pids+=("$!")
 for _ in $(seq 1 40); do
   if curl -fsS "http://localhost:8081/healthz" >/dev/null 2>&1 && curl -fsS "http://localhost:8082/healthz" >/dev/null 2>&1; then
     bash scripts/seed.sh
+    bash scripts/bootstrap-users.sh
     break
   fi
   sleep 1

@@ -44,6 +44,23 @@ Rules:
 
 See `contracts/openapi/content.yaml` and `contracts/examples/news.json`.
 
+## Document pipeline
+
+`services/content` normalises every document, rejects duplicates by canonical URL and by a
+SHA-256 hash of the normalised title and body, and splits the body into overlapping chunks
+stored in `chunks`. `documents.search_vector` is a generated `tsvector` over title and body
+with the `russian` configuration, so `GET /api/v1/search?q=` ranks with `ts_rank_cd`.
+
+Raw PDFs go through `POST /api/v1/documents/pdf`, are stored under `CONTENT_DATA_DIR` and
+are turned into text by `pdftotext`. Both ingestion endpoints return a per-document status:
+`created`, `updated` or `duplicate`.
+
+## Identity API
+
+`services/identity` owns users, sessions and company access. Cookies and bearer tokens are
+described in `contracts/openapi/identity.yaml`. The gateway forwards `/api/v1/auth`,
+`/api/v1/me` and `/api/v1/access` to it; `/api/v1/companies` stays with the company service.
+
 ## RAG chunk API
 
 `services/content` owns the `rag_chunks` table in `content_db`. The agent computes embeddings and calls the content service, so it never connects to `content_db`.

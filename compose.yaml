@@ -7,6 +7,7 @@ x-company-env: &company-env
 x-content-env: &content-env
   CONTENT_ADDR: ":8082"
   CONTENT_DATABASE_URL: postgres://content_svc:content@postgres:5432/content_db?sslmode=disable
+  CONTENT_DATA_DIR: /data/content
   MINIO_ENDPOINT: http://minio:9000
   MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
   MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio12345}
@@ -19,6 +20,17 @@ x-insight-env: &insight-env
   AGENT_URL: http://agent:8090
   ANALYZER_MODE: agent
   AGENT_TIMEOUT: ${AGENT_TIMEOUT:-120s}
+
+x-identity-env: &identity-env
+  IDENTITY_ADDR: ":8086"
+  IDENTITY_DATABASE_URL: postgres://identity_svc:identity@postgres:5432/identity_db?sslmode=disable
+  IDENTITY_SESSION_TTL: ${IDENTITY_SESSION_TTL:-168h}
+  IDENTITY_SESSION_PRUNE_INTERVAL: ${IDENTITY_SESSION_PRUNE_INTERVAL:-1h}
+  IDENTITY_REGISTRATION_ENABLED: ${IDENTITY_REGISTRATION_ENABLED:-true}
+  IDENTITY_LOGIN_MAX_ATTEMPTS: ${IDENTITY_LOGIN_MAX_ATTEMPTS:-5}
+  IDENTITY_LOGIN_WINDOW: ${IDENTITY_LOGIN_WINDOW:-15m}
+  SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-alfa_session}
+  SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
 
 services:
   postgres:
@@ -79,7 +91,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/healthz >/dev/null"]
       interval: 3s
@@ -96,9 +108,28 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
+    volumes:
+      - contentdata:/data/content
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8082/healthz >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  identity:
+    build:
+      context: .
+      dockerfile: services/identity/Dockerfile
+    image: alfa-hack/identity:local
+    environment: *identity-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8086:8086"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8086/healthz >/dev/null"]
       interval: 3s
       timeout: 3s
       retries: 30
@@ -136,7 +167,7 @@ services:
       agent:
         condition: service_healthy
     ports:
-      - "8083:8083"
+      - "127.0.0.1:8083:8083"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8083/healthz >/dev/null"]
       interval: 3s
@@ -153,14 +184,16 @@ services:
       COMPANY_URL: http://company:8081
       CONTENT_URL: http://content:8082
       INSIGHT_URL: http://insight:8083
+      IDENTITY_URL: http://identity:8086
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-alfa_session}
-      SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me}
     depends_on:
       company:
         condition: service_healthy
       content:
         condition: service_healthy
       insight:
+        condition: service_healthy
+      identity:
         condition: service_healthy
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
@@ -189,3 +222,4 @@ services:
 volumes:
   pgdata:
   miniodata:
+  contentdata:

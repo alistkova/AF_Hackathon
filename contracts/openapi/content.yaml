@@ -14,16 +14,244 @@ paths:
   /api/v1/news:
     get:
       operationId: listNews
-      description: Returns news items in the format expected by the AI team.
+      description: |
+        Returns documents in the format expected by the AI team. Filters combine with AND.
+        Pagination uses `limit` and `offset`; the total number of matches is returned in
+        the `X-Total-Count` response header.
+      parameters:
+        - $ref: "#/components/parameters/Kind"
+        - $ref: "#/components/parameters/Sector"
+        - $ref: "#/components/parameters/Tag"
+        - $ref: "#/components/parameters/Source"
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
       responses:
         "200":
           description: News items
+          headers:
+            X-Total-Count:
+              description: Total number of documents matching the filters.
+              schema:
+                type: integer
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: "#/components/schemas/NewsItem"
+        "400":
+          description: Invalid filter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Content service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/news/{newsId}:
+    get:
+      operationId: getNews
+      description: Returns one document by its `news_id` or `document_id`.
+      parameters:
+        - name: newsId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsItem"
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Content service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/search:
+    get:
+      operationId: searchDocuments
+      description: |
+        Full-text search over titles and bodies with the PostgreSQL `russian`
+        configuration. Results are ranked with `ts_rank_cd`; filters combine with AND.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - $ref: "#/components/parameters/Kind"
+        - $ref: "#/components/parameters/Sector"
+        - $ref: "#/components/parameters/Tag"
+        - $ref: "#/components/parameters/Source"
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Ranked matches
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          description: Missing or invalid query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Content service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/documents:
+    post:
+      operationId: ingestDocuments
+      description: |
+        Ingests documents. Duplicates are detected by the canonical source URL and by a
+        content hash over the normalised title and body, so the same material republished
+        under another id does not create a second row. Idempotent per document id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestRequest"
+      responses:
+        "200":
+          description: Per-document ingest result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResponse"
+        "400":
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Content service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/documents/pdf:
+    post:
+      operationId: uploadPdf
+      description: |
+        Stores the raw PDF, extracts its text layer with `pdftotext` and ingests it as a
+        `pdf` document. The document id is derived from the file digest, so re-uploading
+        the same file updates the existing document.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                title:
+                  type: string
+                source_name:
+                  type: string
+                source_url:
+                  type: string
+                published_at:
+                  type: string
+                  format: date
+                tags:
+                  type: string
+                  description: Comma-separated list.
+                sectors:
+                  type: string
+                  description: Comma-separated list.
+      responses:
+        "200":
+          description: Document stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResult"
+        "400":
+          description: Missing file or invalid encoding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: File is larger than 25 MB
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: File is not a PDF
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Text extraction is unavailable or produced no text
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Content service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/documents/{documentId}/chunks:
+    get:
+      operationId: listDocumentChunks
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Chunks ordered by ordinal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentChunksResponse"
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Content service is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api/v1/rag/chunks:
     post:
       operationId: upsertRagChunks
@@ -144,10 +372,62 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 components:
+  parameters:
+    Kind:
+      name: kind
+      in: query
+      description: Document kind, for example `news` or `pdf`.
+      schema:
+        type: string
+    Sector:
+      name: sector
+      in: query
+      description: Matches `target_sectors` exactly.
+      schema:
+        type: string
+    Tag:
+      name: tag
+      in: query
+      description: Matches `tags` exactly.
+      schema:
+        type: string
+    Source:
+      name: source
+      in: query
+      description: Matches `source_name` exactly.
+      schema:
+        type: string
+    From:
+      name: from
+      in: query
+      description: Lower bound for the publication time (`2006-01-02` or RFC3339).
+      schema:
+        type: string
+    To:
+      name: to
+      in: query
+      description: Upper bound for the publication time (`2006-01-02` or RFC3339).
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      description: Page size, 1..200. Defaults to 50.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
   schemas:
     NewsItem:
       type: object
       required:
+        - document_id
         - news_id
         - title
         - published_at
@@ -157,6 +437,8 @@ components:
         - tags
         - target_sectors
       properties:
+        document_id:
+          type: string
         news_id:
           type: string
         title:
@@ -168,7 +450,6 @@ components:
           type: string
         source_url:
           type: string
-          format: uri
         full_text:
           type: string
         tags:
@@ -179,6 +460,101 @@ components:
           type: array
           items:
             type: string
+    SearchHit:
+      allOf:
+        - $ref: "#/components/schemas/NewsItem"
+        - type: object
+          required: [rank]
+          properties:
+            rank:
+              type: number
+              description: PostgreSQL `ts_rank_cd` score.
+    SearchResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchHit"
+        total:
+          type: integer
+    DocumentChunk:
+      type: object
+      required: [ordinal, content]
+      properties:
+        ordinal:
+          type: integer
+        content:
+          type: string
+    DocumentChunksResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentChunk"
+    IngestItem:
+      type: object
+      required: [title, full_text]
+      properties:
+        document_id:
+          type: string
+        news_id:
+          type: string
+        kind:
+          type: string
+          default: news
+        title:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        source_name:
+          type: string
+        source_url:
+          type: string
+        full_text:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        target_sectors:
+          type: array
+          items:
+            type: string
+    IngestRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/IngestItem"
+    IngestResult:
+      type: object
+      required: [status, document_id, news_id, chunks]
+      properties:
+        status:
+          type: string
+          enum: [created, updated, duplicate]
+        document_id:
+          type: string
+        news_id:
+          type: string
+        chunks:
+          type: integer
+    IngestResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/IngestResult"
     RagChunk:
       type: object
       required: [content, source, page, chunk, company_id, sector]

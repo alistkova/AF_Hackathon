@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,12 +23,20 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 
 const companyColumns = `id, name, inn, industry, region, description, group_id, okved_code, okved_name, client_type, revenue, city, products, attributes, created_at`
 
-func (r *Repository) List(ctx context.Context) ([]Company, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT `+companyColumns+`
-		FROM companies
+func (r *Repository) List(ctx context.Context, ids []string) ([]Company, error) {
+	query := `
+		SELECT ` + companyColumns + `
+		FROM companies`
+	args := make([]any, 0, 1)
+	if ids != nil {
+		query += ` WHERE id = ANY($1)`
+		args = append(args, ids)
+	}
+	query += `
 		ORDER BY name
-	`)
+	`
+
+	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -270,19 +280,37 @@ func (r *Repository) listRelations(ctx context.Context, companyID string) ([]Com
 	if err != nil {
 		return nil, err
 	}
+
+	type paymentAggregate struct {
+		companyID string
+		name      string
+		inbound   *RelationFlow
+		outbound  *RelationFlow
+	}
+	aggregates := make(map[string]*paymentAggregate)
 	for paymentRows.Next() {
-		item := CompanyRelation{Type: "counterparty", Relation: "payment"}
-		var outbound bool
-		if err := paymentRows.Scan(&item.CompanyID, &item.CompanyName, &outbound, &item.Amount, &item.Count); err != nil {
+		var (
+			companyID string
+			name      string
+			outbound  bool
+			amount    float64
+			count     int64
+		)
+		if err := paymentRows.Scan(&companyID, &name, &outbound, &amount, &count); err != nil {
 			paymentRows.Close()
 			return nil, err
 		}
-		if outbound {
-			item.Direction = "outbound"
-		} else {
-			item.Direction = "inbound"
+		aggregate, ok := aggregates[companyID]
+		if !ok {
+			aggregate = &paymentAggregate{companyID: companyID, name: name}
+			aggregates[companyID] = aggregate
 		}
-		items = append(items, item)
+		flow := &RelationFlow{Amount: amount, Count: count}
+		if outbound {
+			aggregate.outbound = flow
+		} else {
+			aggregate.inbound = flow
+		}
 	}
 	if err := paymentRows.Err(); err != nil {
 		paymentRows.Close()
@@ -290,7 +318,78 @@ func (r *Repository) listRelations(ctx context.Context, companyID string) ([]Com
 	}
 	paymentRows.Close()
 
-	return items, nil
+	for _, aggregate := range aggregates {
+		item := CompanyRelation{
+			CompanyID:   aggregate.companyID,
+			CompanyName: aggregate.name,
+			Type:        "counterparty",
+			Relation:    "payment",
+			Inbound:     aggregate.inbound,
+			Outbound:    aggregate.outbound,
+		}
+		switch {
+		case aggregate.outbound != nil:
+			item.Direction = "outbound"
+			item.Amount = aggregate.outbound.Amount
+			item.Count = aggregate.outbound.Count
+		case aggregate.inbound != nil:
+			item.Direction = "inbound"
+			item.Amount = aggregate.inbound.Amount
+			item.Count = aggregate.inbound.Count
+		}
+		items = append(items, item)
+	}
+
+	return mergeRelations(items), nil
+}
+
+var relationRank = map[string]int{"group": 0, "shared_person": 1, "counterparty": 2}
+
+func mergeRelations(items []CompanyRelation) []CompanyRelation {
+	merged := make([]CompanyRelation, 0, len(items))
+	index := make(map[string]int, len(items))
+
+	for _, item := range items {
+		position, exists := index[item.CompanyID]
+		if !exists {
+			item.Types = []string{item.Type}
+			index[item.CompanyID] = len(merged)
+			merged = append(merged, item)
+			continue
+		}
+
+		target := &merged[position]
+		if !slices.Contains(target.Types, item.Type) {
+			target.Types = append(target.Types, item.Type)
+		}
+		if relationRank[item.Type] < relationRank[target.Type] {
+			target.Type = item.Type
+			target.Relation = item.Relation
+		}
+		if item.SharedPeople > target.SharedPeople {
+			target.SharedPeople = item.SharedPeople
+		}
+		if item.Inbound != nil {
+			target.Inbound = item.Inbound
+		}
+		if item.Outbound != nil {
+			target.Outbound = item.Outbound
+		}
+		if item.Direction != "" {
+			target.Direction = item.Direction
+			target.Amount = item.Amount
+			target.Count = item.Count
+		}
+	}
+
+	slices.SortFunc(merged, func(a, b CompanyRelation) int {
+		if c := strings.Compare(a.CompanyName, b.CompanyName); c != 0 {
+			return c
+		}
+		return strings.Compare(a.CompanyID, b.CompanyID)
+	})
+
+	return merged
 }
 
 func scanCompany(row interface{ Scan(dest ...any) error }) (Company, error) {
