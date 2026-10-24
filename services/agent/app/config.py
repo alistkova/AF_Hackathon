@@ -1,7 +1,12 @@
 from functools import lru_cache
+from pathlib import Path
+from tempfile import gettempdir
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_AGENT_DIR = Path(__file__).resolve().parent.parent
+_TEMP_DIR = Path(gettempdir())
 
 
 class Settings(BaseSettings):
@@ -13,6 +18,11 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = ""
+
+    rag_index_dir: str = str(_TEMP_DIR / "alfa_rag_index")
+    rag_data_dir: str = str(_AGENT_DIR / "data")
+    rag_use_ocr: bool = False
+    content_url: str = "http://localhost:8082"
 
     def step_delay(self) -> float:
         raw = self.agent_step_delay.strip().lower()

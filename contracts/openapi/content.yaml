@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Content Service API
-  version: 0.1.0
+  version: 0.2.0
 servers:
   - url: http://content:8082
 paths:
@@ -24,6 +24,125 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/NewsItem"
+  /api/v1/rag/chunks:
+    post:
+      operationId: upsertRagChunks
+      description: Upserts embedded chunks. Chunks are keyed by source, page and chunk.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagUpsertRequest"
+      responses:
+        "200":
+          description: Chunks stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagUpsertResponse"
+        "400":
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteRagChunks
+      description: Removes every stored chunk.
+      responses:
+        "200":
+          description: Chunks removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagDeleteResponse"
+        "500":
+          description: Storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/rag/chunks/search:
+    post:
+      operationId: searchRagChunks
+      description: Returns the closest chunks by cosine distance with metadata filters.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagSearchRequest"
+      responses:
+        "200":
+          description: Matching chunks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagChunksResponse"
+        "400":
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/rag/chunks/list:
+    post:
+      operationId: listRagChunks
+      description: Lists chunks by metadata, newest published first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagListRequest"
+      responses:
+        "200":
+          description: Matching chunks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagChunksResponse"
+        "400":
+          description: Invalid payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/rag/chunks/count:
+    get:
+      operationId: countRagChunks
+      responses:
+        "200":
+          description: Number of stored chunks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagCountResponse"
+        "500":
+          description: Storage unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   schemas:
     NewsItem:
@@ -60,3 +179,138 @@ components:
           type: array
           items:
             type: string
+    RagChunk:
+      type: object
+      required: [content, source, page, chunk, company_id, sector]
+      properties:
+        content:
+          type: string
+        source:
+          type: string
+        page:
+          type: integer
+        chunk:
+          type: integer
+        company_id:
+          type: string
+        sector:
+          type: string
+        published_at:
+          type: string
+          format: date
+        distance:
+          type: number
+    RagChunkUpsert:
+      type: object
+      required: [content, source, page, chunk, company_id, sector, embedding]
+      properties:
+        content:
+          type: string
+        source:
+          type: string
+        page:
+          type: integer
+        chunk:
+          type: integer
+        company_id:
+          type: string
+        sector:
+          type: string
+        published_at:
+          type: string
+          format: date
+        embedding:
+          type: array
+          minItems: 384
+          maxItems: 384
+          items:
+            type: number
+    RagUpsertRequest:
+      type: object
+      required: [chunks]
+      properties:
+        chunks:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/RagChunkUpsert"
+    RagUpsertResponse:
+      type: object
+      required: [upserted]
+      properties:
+        upserted:
+          type: integer
+    RagSearchRequest:
+      type: object
+      required: [embedding]
+      properties:
+        embedding:
+          type: array
+          minItems: 384
+          maxItems: 384
+          items:
+            type: number
+        top_k:
+          type: integer
+          default: 10
+          minimum: 1
+          maximum: 200
+        max_distance:
+          type: number
+          minimum: 0
+        company_id:
+          type: string
+        sector:
+          type: string
+        published_after:
+          type: string
+          format: date
+        published_before:
+          type: string
+          format: date
+    RagListRequest:
+      type: object
+      properties:
+        top_k:
+          type: integer
+          default: 100
+          minimum: 1
+          maximum: 200
+        company_id:
+          type: string
+        sector:
+          type: string
+        published_after:
+          type: string
+          format: date
+        published_before:
+          type: string
+          format: date
+    RagChunksResponse:
+      type: object
+      required: [chunks]
+      properties:
+        chunks:
+          type: array
+          items:
+            $ref: "#/components/schemas/RagChunk"
+    RagCountResponse:
+      type: object
+      required: [count]
+      properties:
+        count:
+          type: integer
+    RagDeleteResponse:
+      type: object
+      required: [deleted]
+      properties:
+        deleted:
+          type: integer
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

@@ -1,6 +1,7 @@
 package content
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -8,12 +9,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type store interface {
+	ListDocuments(ctx context.Context, limit int) ([]NewsItem, error)
+	UpsertRAGChunks(ctx context.Context, chunks []RAGChunkInput) (int, error)
+	SearchRAGChunks(ctx context.Context, query RAGSearchQuery) ([]RAGChunk, error)
+	ListRAGChunks(ctx context.Context, query RAGListQuery) ([]RAGChunk, error)
+	CountRAGChunks(ctx context.Context) (int64, error)
+	DeleteRAGChunks(ctx context.Context) (int64, error)
+}
+
 type Handler struct {
-	repo   *Repository
+	repo   store
 	logger *slog.Logger
 }
 
-func NewHandler(repo *Repository, logger *slog.Logger) *Handler {
+func NewHandler(repo store, logger *slog.Logger) *Handler {
 	return &Handler{repo: repo, logger: logger}
 }
 

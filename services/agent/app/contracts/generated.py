@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
+from datetime import date
 from enum import Enum
 from typing import Any
 
-from pydantic import AnyUrl, AwareDatetime, BaseModel, confloat
+from pydantic import AnyUrl, AwareDatetime, BaseModel, confloat, conint
 
 
 class Mode(Enum):
@@ -55,6 +56,82 @@ class Insight(BaseModel):
     actions: list[str]
     confidence: confloat(ge=0.0, le=1.0)
     meta: dict[str, Any] | None = None
+
+
+class RagBuildIndexRequest(BaseModel):
+    data_dir: str | None = None
+    index_dir: str | None = None
+
+
+class RagUpdateIndexRequest(BaseModel):
+    data_dir: str | None = None
+    index_dir: str | None = None
+
+
+class RagQueryRequest(BaseModel):
+    question: str
+    model: str | None = 'qwen'
+    top_k: conint(ge=1) | None = 5
+    company_id: str | None = None
+    sector: str | None = None
+    published_after: date | None = None
+    published_before: date | None = None
+
+
+class RagQueryResponse(BaseModel):
+    answer: str
+    sources: list[str]
+
+
+class RagChunk(BaseModel):
+    content: str
+    source: str | None = None
+    page: int | None = None
+    chunk: int | None = None
+    company_id: str | None = None
+    sector: str | None = None
+    published_at: date | None = None
+
+
+class RagSearchRequest(BaseModel):
+    query: str
+    top_k: conint(ge=1) | None = 10
+    company_id: str | None = None
+    sector: str | None = None
+    published_after: date | None = None
+    published_before: date | None = None
+
+
+class RagSearchResponse(BaseModel):
+    query: str
+    chunks: list[RagChunk]
+    sources: list[str]
+
+
+class RagListChunksRequest(BaseModel):
+    top_k: conint(ge=1) | None = 100
+    company_id: str | None = None
+    sector: str | None = None
+    published_after: date | None = None
+    published_before: date | None = None
+
+
+class RagListChunksResponse(BaseModel):
+    chunks: list[RagChunk]
+    sources: list[str]
+
+
+class RagJobAccepted(BaseModel):
+    status: str
+    message: str
+
+
+class RagStats(BaseModel):
+    processed_files: int
+    total_pages: int
+    files: dict[str, dict[str, Any]]
+    index_dir: str
+    index_exists: bool
 
 
 class Error(BaseModel):
