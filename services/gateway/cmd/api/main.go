@@ -25,6 +25,7 @@ func main() {
 	companyProxy := sse.Proxy(config.String("COMPANY_URL", "http://localhost:8081"), logger)
 	contentProxy := sse.Proxy(config.String("CONTENT_URL", "http://localhost:8082"), logger)
 	insightProxy := sse.Proxy(config.String("INSIGHT_URL", "http://localhost:8083"), logger)
+	identityProxy := sse.Proxy(config.String("IDENTITY_URL", "http://localhost:8086"), logger)
 
 	router := gin.New()
 	router.Use(gin.Recovery(), obs.RequestID())
@@ -36,6 +37,10 @@ func main() {
 		switch {
 		case path == "/api/v1/companies" || strings.HasPrefix(path, "/api/v1/companies/"):
 			companyProxy(c)
+		case path == "/api/v1/auth" || strings.HasPrefix(path, "/api/v1/auth/"):
+			identityProxy(c)
+		case path == "/api/v1/me" || path == "/api/v1/access" || strings.HasPrefix(path, "/api/v1/access/"):
+			identityProxy(c)
 		case path == "/api/v1/news" || strings.HasPrefix(path, "/api/v1/news/"):
 			contentProxy(c)
 		case path == "/api/v1/feed" || strings.HasPrefix(path, "/api/v1/insights/"):
