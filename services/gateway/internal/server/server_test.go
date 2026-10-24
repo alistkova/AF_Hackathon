@@ -85,11 +85,16 @@ func newCompanyStub(t *testing.T, recorder *companyRecorder) *httptest.Server {
 
 func newTestRouter(t *testing.T, identityURL, companyURL string) *gin.Engine {
 	t.Helper()
+	return newTestRouterWith(t, identityURL, companyURL, companyURL, companyURL)
+}
+
+func newTestRouterWith(t *testing.T, identityURL, companyURL, contentURL, insightURL string) *gin.Engine {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 	return New(Config{
 		CompanyURL:  companyURL,
-		ContentURL:  companyURL,
-		InsightURL:  companyURL,
+		ContentURL:  contentURL,
+		InsightURL:  insightURL,
 		IdentityURL: identityURL,
 		CookieName:  "alfa_session",
 		Logger:      slog.New(slog.DiscardHandler),
@@ -292,5 +297,262 @@ func TestUnknownRoute(t *testing.T) {
 	}
 	if calls := recorder.snapshot(); len(calls) != 0 {
 		t.Fatalf("company calls = %d, want 0", len(calls))
+	}
+}
+
+type insightRecorder struct {
+	mu       sync.Mutex
+	requests []string
+}
+
+func (r *insightRecorder) add(method, path string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.requests = append(r.requests, method+" "+path)
+}
+
+func (r *insightRecorder) snapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.requests...)
+}
+
+func newInsightStub(t *testing.T, jobs map[string]string, recorder *insightRecorder) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/feed", func(w http.ResponseWriter, r *http.Request) {
+		recorder.add(r.Method, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	})
+	mux.HandleFunc("/api/v1/insights/jobs", func(w http.ResponseWriter, r *http.Request) {
+		recorder.add(r.Method, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"job_id":"job-1","company_id":"magnit","status":"queued","events_url":"/api/v1/insights/jobs/job-1/events"}`))
+	})
+	mux.HandleFunc("/api/v1/insights/jobs/", func(w http.ResponseWriter, r *http.Request) {
+		recorder.add(r.Method, r.URL.Path)
+		id := strings.TrimPrefix(r.URL.Path, "/api/v1/insights/jobs/")
+		if strings.HasSuffix(id, "/events") {
+			id = strings.TrimSuffix(id, "/events")
+			if companyID, ok := jobs[id]; ok {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte("event: result\ndata: {\"type\":\"result\",\"job_id\":\"" + id + "\",\"company_id\":\"" + companyID + "\"}\n\n"))
+				return
+			}
+			http.NotFound(w, r)
+			return
+		}
+		companyID, ok := jobs[id]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"job_id":"` + id + `","company_id":"` + companyID + `","status":"done"}`))
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	return server
+}
+
+func requestJSON(t *testing.T, router *gin.Engine, method, path, body, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := recorder{ResponseRecorder: httptest.NewRecorder()}
+	router.ServeHTTP(rec, req)
+	return rec.ResponseRecorder
+}
+
+func TestFeedRequiresSession(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &insightRecorder{}
+	insight := newInsightStub(t, map[string]string{"job-1": "magnit"}, recorder)
+	router := newTestRouterWith(t, identity.URL, identity.URL, identity.URL, insight.URL)
+
+	response := request(t, router, "/api/v1/feed?company_id=magnit", "", "")
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+	if calls := recorder.snapshot(); len(calls) != 0 {
+		t.Fatalf("insight calls = %v, want none", calls)
+	}
+}
+
+func TestFeedRequiresCompany(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &insightRecorder{}
+	insight := newInsightStub(t, nil, recorder)
+	router := newTestRouterWith(t, identity.URL, identity.URL, identity.URL, insight.URL)
+
+	response := request(t, router, "/api/v1/feed", "analyst-token", "")
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+}
+
+func TestFeedRejectsForbiddenCompany(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &insightRecorder{}
+	insight := newInsightStub(t, nil, recorder)
+	router := newTestRouterWith(t, identity.URL, identity.URL, identity.URL, insight.URL)
+
+	response := request(t, router, "/api/v1/feed?company_id=sber", "analyst-token", "")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+	if calls := recorder.snapshot(); len(calls) != 0 {
+		t.Fatalf("insight calls = %v, want none", calls)
+	}
+}
+
+func TestFeedAllowsGrantedCompany(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &insightRecorder{}
+	insight := newInsightStub(t, nil, recorder)
+	router := newTestRouterWith(t, identity.URL, identity.URL, identity.URL, insight.URL)
+
+	response := request(t, router, "/api/v1/feed?company_id=magnit", "analyst-token", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if calls := recorder.snapshot(); len(calls) != 1 {
+		t.Fatalf("insight calls = %v, want one", calls)
+	}
+}
+
+func TestAdminFeedAllowsAnyCompany(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &insightRecorder{}
+	insight := newInsightStub(t, nil, recorder)
+	router := newTestRouterWith(t, identity.URL, identity.URL, identity.URL, insight.URL)
+
+	response := request(t, router, "/api/v1/feed?company_id=sber", "admin-token", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+}
+
+func TestJobCreateRejectsForbiddenCompany(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &insightRecorder{}
+	insight := newInsightStub(t, nil, recorder)
+	router := newTestRouterWith(t, identity.URL, identity.URL, identity.URL, insight.URL)
+
+	response := requestJSON(t, router, http.MethodPost, "/api/v1/insights/jobs",
+		`{"company_id":"sber","event":{"id":"e1","title":"test"}}`, "analyst-token")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+	if calls := recorder.snapshot(); len(calls) != 0 {
+		t.Fatalf("insight calls = %v, want none", calls)
+	}
+}
+
+func TestJobCreateAllowsGrantedCompany(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &insightRecorder{}
+	insight := newInsightStub(t, nil, recorder)
+	router := newTestRouterWith(t, identity.URL, identity.URL, identity.URL, insight.URL)
+
+	response := requestJSON(t, router, http.MethodPost, "/api/v1/insights/jobs",
+		`{"company_id":"magnit","event":{"id":"e1","title":"test"}}`, "analyst-token")
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusAccepted)
+	}
+	if calls := recorder.snapshot(); len(calls) != 1 {
+		t.Fatalf("insight calls = %v, want one", calls)
+	}
+}
+
+func TestJobReadRejectsForbiddenCompany(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &insightRecorder{}
+	insight := newInsightStub(t, map[string]string{"job-1": "sber"}, recorder)
+	router := newTestRouterWith(t, identity.URL, identity.URL, identity.URL, insight.URL)
+
+	response := request(t, router, "/api/v1/insights/jobs/job-1", "analyst-token", "")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+	if calls := recorder.snapshot(); len(calls) != 1 {
+		t.Fatalf("insight calls = %v, want only the lookup", calls)
+	}
+}
+
+func TestJobReadAllowsGrantedCompany(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &insightRecorder{}
+	insight := newInsightStub(t, map[string]string{"job-1": "magnit"}, recorder)
+	router := newTestRouterWith(t, identity.URL, identity.URL, identity.URL, insight.URL)
+
+	response := request(t, router, "/api/v1/insights/jobs/job-1", "analyst-token", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if calls := recorder.snapshot(); len(calls) != 2 {
+		t.Fatalf("insight calls = %v, want lookup and proxy", calls)
+	}
+}
+
+func TestJobStreamRejectsForbiddenCompany(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &insightRecorder{}
+	insight := newInsightStub(t, map[string]string{"job-1": "sber"}, recorder)
+	router := newTestRouterWith(t, identity.URL, identity.URL, identity.URL, insight.URL)
+
+	response := request(t, router, "/api/v1/insights/jobs/job-1/events", "analyst-token", "")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+	if calls := recorder.snapshot(); len(calls) != 1 {
+		t.Fatalf("insight calls = %v, want only the lookup", calls)
+	}
+}
+
+func TestJobNotFound(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &insightRecorder{}
+	insight := newInsightStub(t, nil, recorder)
+	router := newTestRouterWith(t, identity.URL, identity.URL, identity.URL, insight.URL)
+
+	response := request(t, router, "/api/v1/insights/jobs/missing", "admin-token", "")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
+func TestDocumentIngestRequiresAdmin(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	content := newCompanyStub(t, &companyRecorder{})
+	router := newTestRouterWith(t, identity.URL, identity.URL, content.URL, identity.URL)
+
+	response := requestJSON(t, router, http.MethodPost, "/api/v1/documents",
+		`{"items":[{"title":"t","full_text":"body"}]}`, "analyst-token")
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("analyst status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+
+	response = requestJSON(t, router, http.MethodPost, "/api/v1/documents",
+		`{"items":[{"title":"t","full_text":"body"}]}`, "admin-token")
+	if response.Code != http.StatusOK {
+		t.Fatalf("admin status = %d, want %d", response.Code, http.StatusOK)
 	}
 }
