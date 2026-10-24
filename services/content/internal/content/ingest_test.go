@@ -1,8 +1,11 @@
 package content
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestNormalizeURL(t *testing.T) {
@@ -129,5 +132,20 @@ func TestChunkTextNormalizesChunkSize(t *testing.T) {
 		if len([]rune(chunk)) > MaxChunkSize {
 			t.Fatalf("chunk longer than max size: %d", len([]rune(chunk)))
 		}
+	}
+}
+
+func TestIsUniqueViolation(t *testing.T) {
+	if isUniqueViolation(nil) {
+		t.Fatal("nil should not be a unique violation")
+	}
+	if isUniqueViolation(fmt.Errorf("boom")) {
+		t.Fatal("generic error should not be a unique violation")
+	}
+	if !isUniqueViolation(&pgconn.PgError{Code: "23505"}) {
+		t.Fatal("23505 should be a unique violation")
+	}
+	if isUniqueViolation(&pgconn.PgError{Code: "23503"}) {
+		t.Fatal("23503 should not be a unique violation")
 	}
 }

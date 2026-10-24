@@ -75,29 +75,36 @@ func (h *Handler) UploadPDF(c *gin.Context) {
 	digest := hex.EncodeToString(sum[:])
 	key := path.Join("pdf", digest[:2], digest+".pdf")
 
+	title := strings.TrimSpace(c.PostForm("title"))
+	if title == "" {
+		title = deriveTitle(text, header.Filename)
+	}
+	title = truncateRunes(title, maxTitleRunes)
+	sourceName := strings.TrimSpace(c.PostForm("source_name"))
+	sourceURL := strings.TrimSpace(c.PostForm("source_url"))
+
+	if !utf8.ValidString(title) || !utf8.ValidString(sourceName) || !utf8.ValidString(sourceURL) {
+		httpx.Error(c, http.StatusBadRequest, "invalid_encoding", "Текстовые поля должны быть в кодировке UTF-8")
+		return
+	}
+	publishedAt, err := parseFormTime(c.PostForm("published_at"))
+	if err != nil {
+		httpx.Error(c, http.StatusBadRequest, "invalid_published_at", "Дата публикации должна быть в формате 2006-01-02 или RFC3339")
+		return
+	}
+
+	documentID := "pdf_" + digest[:16]
 	if err := h.files.Put(c.Request.Context(), key, data); err != nil {
 		h.logger.Error("store pdf", "error", err, "key", key)
 		httpx.Error(c, http.StatusInternalServerError, "storage_unavailable", "Не удалось сохранить файл")
 		return
 	}
 
-	title := strings.TrimSpace(c.PostForm("title"))
-	if title == "" {
-		title = deriveTitle(text, header.Filename)
-	}
-	sourceName := c.PostForm("source_name")
-	sourceURL := c.PostForm("source_url")
-
-	if !utf8.ValidString(title) || !utf8.ValidString(sourceName) || !utf8.ValidString(sourceURL) {
-		httpx.Error(c, http.StatusBadRequest, "invalid_encoding", "Текстовые поля должны быть в кодировке UTF-8")
-		return
-	}
-
 	result, err := h.repo.IngestDocument(c.Request.Context(), IngestInput{
-		DocumentID:    "pdf_" + digest[:16],
+		DocumentID:    documentID,
 		Kind:          "pdf",
 		Title:         title,
-		PublishedAt:   parseFormTime(c.PostForm("published_at")),
+		PublishedAt:   publishedAt,
 		SourceName:    sourceName,
 		SourceURL:     sourceURL,
 		FullText:      text,
@@ -109,8 +116,12 @@ func (h *Handler) UploadPDF(c *gin.Context) {
 	})
 	if err != nil {
 		h.logger.Error("ingest pdf", "error", err, "key", key)
+		_ = h.files.Delete(c.Request.Context(), key)
 		httpx.Error(c, http.StatusInternalServerError, "content_unavailable", "Не удалось сохранить документ")
 		return
+	}
+	if result.Status == IngestDuplicate && result.DocumentID != documentID {
+		_ = h.files.Delete(c.Request.Context(), key)
 	}
 
 	c.JSON(http.StatusOK, result)
@@ -122,11 +133,7 @@ func deriveTitle(text, filename string) string {
 		if line == "" {
 			continue
 		}
-		runes := []rune(line)
-		if len(runes) > maxTitleRunes {
-			return string(runes[:maxTitleRunes])
-		}
-		return line
+		return truncateRunes(line, maxTitleRunes)
 	}
 
 	name := strings.TrimSpace(filename)
@@ -135,7 +142,15 @@ func deriveTitle(text, filename string) string {
 	if name == "" {
 		return "PDF документ"
 	}
-	return name
+	return truncateRunes(name, maxTitleRunes)
+}
+
+func truncateRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit])
 }
 
 func splitList(value string) []string {
@@ -153,15 +168,15 @@ func splitList(value string) []string {
 	return items
 }
 
-func parseFormTime(value string) time.Time {
+func parseFormTime(value string) (time.Time, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return time.Time{}
+		return time.Time{}, nil
 	}
 	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
 		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed
+			return parsed, nil
 		}
 	}
-	return time.Time{}
+	return time.Time{}, errors.New("invalid published_at")
 }

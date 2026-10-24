@@ -127,3 +127,29 @@ func TestSplitList(t *testing.T) {
 		t.Fatal("splitList should return nil for blank input")
 	}
 }
+
+func TestParseFormTime(t *testing.T) {
+	parsed, err := parseFormTime("2026-09-11")
+	if err != nil || parsed.Format("2006-01-02") != "2026-09-11" {
+		t.Fatalf("parseFormTime date = %v, %v", parsed, err)
+	}
+	parsed, err = parseFormTime("2026-09-11T13:30:00Z")
+	if err != nil || parsed.IsZero() {
+		t.Fatalf("parseFormTime rfc3339 = %v, %v", parsed, err)
+	}
+	if _, err := parseFormTime("not-a-date"); err == nil {
+		t.Fatal("parseFormTime accepted an invalid date")
+	}
+	if parsed, err := parseFormTime(""); err != nil || !parsed.IsZero() {
+		t.Fatalf("parseFormTime empty = %v, %v", parsed, err)
+	}
+}
+
+func TestTruncateRunes(t *testing.T) {
+	if got := truncateRunes("абвгда", 4); got != "абвг" {
+		t.Fatalf("truncateRunes = %q", got)
+	}
+	if got := truncateRunes("abc", 10); got != "abc" {
+		t.Fatalf("truncateRunes short = %q", got)
+	}
+}

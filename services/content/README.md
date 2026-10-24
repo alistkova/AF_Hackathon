@@ -12,7 +12,8 @@ Every document goes through the same path:
 2. **Deduplicate** — the canonical source URL (`NormalizeURL`) and a SHA-256 hash over the
    lowercased title and body (`ContentHash`) are unique. A republished article that arrives
    with a new id but the same URL or the same text is reported as `duplicate` and only
-   bumps `seen_count`; nothing is inserted.
+   bumps `seen_count`; nothing is inserted. If two identical ingests race, the unique index
+   wins and the loser is resolved as `duplicate` instead of failing.
 3. **Chunk** — the body is split into ~1200 character chunks with 200 characters of
    overlap, preferring paragraph and sentence boundaries. Chunks are stored in `chunks`
    with a stable `ordinal`, so re-ingesting replaces them instead of duplicating.

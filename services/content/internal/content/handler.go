@@ -159,7 +159,7 @@ func (h *Handler) Ingest(c *gin.Context) {
 
 func documentFilter(c *gin.Context) (DocumentFilter, bool) {
 	filter := DocumentFilter{
-		Kind:   strings.TrimSpace(c.Query("kind")),
+		Kind:   strings.ToLower(strings.TrimSpace(c.Query("kind"))),
 		Sector: strings.TrimSpace(c.Query("sector")),
 		Tag:    strings.TrimSpace(c.Query("tag")),
 		Source: strings.TrimSpace(c.Query("source")),

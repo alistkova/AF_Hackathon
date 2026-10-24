@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -58,6 +59,8 @@ func (r *Repository) GetDocument(ctx context.Context, id string) (NewsItem, erro
 		SELECT `+newsColumns+`
 		FROM documents
 		WHERE id = $1 OR news_id = $1
+		ORDER BY (id = $1) DESC
+		LIMIT 1
 	`, id))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return NewsItem{}, ErrNotFound
@@ -191,6 +194,16 @@ func (r *Repository) IngestDocument(ctx context.Context, input IngestInput) (Ing
 	`, input.DocumentID, input.NewsID, input.Kind, input.Title, input.PublishedAt, input.SourceName,
 		input.SourceURL, input.FullText, emptyIfNil(input.Tags), emptyIfNil(input.TargetSectors),
 		hash, canonical, input.ObjectKey, input.MIMEType, input.ByteSize, len(chunks)); err != nil {
+		if isUniqueViolation(err) {
+			_ = tx.Rollback(ctx)
+			duplicate, found, lookupErr := r.recordDuplicate(ctx, input.DocumentID, input.NewsID, hash, canonical)
+			if lookupErr != nil {
+				return IngestResult{}, lookupErr
+			}
+			if found {
+				return duplicate, nil
+			}
+		}
 		return IngestResult{}, err
 	}
 
@@ -336,4 +349,40 @@ func emptyIfNil(values []string) []string {
 		return []string{}
 	}
 	return values
+}
+
+func (r *Repository) recordDuplicate(ctx context.Context, documentID, newsID, hash, canonical string) (IngestResult, bool, error) {
+	var existingID, existingNewsID string
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, news_id FROM documents
+		WHERE id = $1 OR news_id = $2
+		   OR ($3 <> '' AND content_hash = $3)
+		   OR ($4 <> '' AND canonical_url = $4)
+		ORDER BY (id = $1) DESC, (news_id = $2) DESC
+		LIMIT 1
+	`, documentID, newsID, hash, canonical).Scan(&existingID, &existingNewsID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return IngestResult{}, false, nil
+	}
+	if err != nil {
+		return IngestResult{}, false, err
+	}
+
+	if _, err := r.pool.Exec(ctx, `
+		UPDATE documents SET seen_count = seen_count + 1, last_seen_at = now()
+		WHERE id = $1
+	`, existingID); err != nil {
+		return IngestResult{}, false, err
+	}
+
+	return IngestResult{
+		Status:     IngestDuplicate,
+		DocumentID: existingID,
+		NewsID:     existingNewsID,
+	}, true, nil
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
