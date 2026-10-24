@@ -113,9 +113,19 @@ The company service owns company profiles in `company_db`. Clients call it throu
 ```bash
 curl -s localhost:8080/api/v1/companies
 curl -s localhost:8080/api/v1/companies/magnit
+curl -s localhost:8080/api/v1/companies/magnit/relations
 ```
 
-`GET /api/v1/companies` returns `{"items":[...]}` ordered by name. `GET /api/v1/companies/{companyId}` returns one company or a `404` error. Demo data is loaded from `seed/companies.csv` by `make seed`.
+`GET /api/v1/companies` returns `{"items":[...]}` ordered by name. `GET /api/v1/companies/{companyId}` returns one company with `people` and `relations`, or a `404` error. Relations resolve company groups, shared people and payment counterparties from `company_db`.
+
+Demo data is loaded from `seed/companies.csv` by `make seed`. The hackathon datasets are imported with the same command:
+
+```bash
+go run ./services/company/cmd/seed \
+  -file path/to/df_Uid_data_hack.csv \
+  -people path/to/df_Fid_Uid_link_hack.csv \
+  -payments path/to/payments.csv
+```
 
 Service details, the data model, CSV format and local debugging steps are in [services/company/README.md](services/company/README.md). The service contract is [contracts/openapi/company.yaml](contracts/openapi/company.yaml).
 

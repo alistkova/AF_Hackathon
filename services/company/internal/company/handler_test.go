@@ -14,11 +14,17 @@ import (
 )
 
 type fakeStore struct {
-	items   []Company
-	listErr error
-	item    Company
-	getErr  error
-	gotID   string
+	items      []Company
+	listErr    error
+	item       Company
+	getErr     error
+	gotID      string
+	details    CompanyDetails
+	detailsErr error
+	people     []CompanyPerson
+	peopleErr  error
+	relations  []CompanyRelation
+	relErr     error
 }
 
 func (f *fakeStore) List(context.Context) ([]Company, error) {
@@ -30,12 +36,38 @@ func (f *fakeStore) Get(_ context.Context, id string) (Company, error) {
 	return f.item, f.getErr
 }
 
+func (f *fakeStore) GetWithPeople(_ context.Context, id string) (CompanyDetails, error) {
+	f.gotID = id
+	if f.detailsErr != nil {
+		return CompanyDetails{}, f.detailsErr
+	}
+	if f.getErr != nil {
+		return CompanyDetails{}, f.getErr
+	}
+	if f.details.ID == "" && f.item.ID != "" {
+		return CompanyDetails{Company: f.item}, nil
+	}
+	return f.details, nil
+}
+
+func (f *fakeStore) ListPeople(_ context.Context, id string) ([]CompanyPerson, error) {
+	f.gotID = id
+	return f.people, f.peopleErr
+}
+
+func (f *fakeStore) ListRelations(_ context.Context, id string) ([]CompanyRelation, error) {
+	f.gotID = id
+	return f.relations, f.relErr
+}
+
 func newTestRouter(store Store) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	handler := NewHandler(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	router := gin.New()
 	router.GET("/api/v1/companies", handler.List)
 	router.GET("/api/v1/companies/:id", handler.Get)
+	router.GET("/api/v1/companies/:id/people", handler.People)
+	router.GET("/api/v1/companies/:id/relations", handler.Relations)
 	return router
 }
 
@@ -154,5 +186,75 @@ func TestGetCompanyError(t *testing.T) {
 	}
 	if body.Code != "company_unavailable" {
 		t.Fatalf("code = %q, want company_unavailable", body.Code)
+	}
+}
+
+func TestGetCompanyIncludesRelations(t *testing.T) {
+	store := &fakeStore{details: CompanyDetails{
+		Company: Company{ID: "magnit", Name: "Магнит"},
+		People:  []CompanyPerson{{Person: Person{ID: "f1", FullName: "f1"}, Relation: "linked_person"}},
+		Relations: []CompanyRelation{
+			{CompanyID: "tander", CompanyName: "Тандер", Type: "group", Relation: "same_group"},
+		},
+	}}
+
+	recorder := performRequest(t, newTestRouter(store), "/api/v1/companies/magnit")
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	var body CompanyDetails
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.People) != 1 || body.People[0].Person.ID != "f1" {
+		t.Fatalf("unexpected people: %+v", body.People)
+	}
+	if len(body.Relations) != 1 || body.Relations[0].CompanyID != "tander" {
+		t.Fatalf("unexpected relations: %+v", body.Relations)
+	}
+}
+
+func TestListCompanyRelations(t *testing.T) {
+	store := &fakeStore{relations: []CompanyRelation{
+		{CompanyID: "tander", CompanyName: "Тандер", Type: "counterparty", Relation: "payment", Direction: "outbound", Amount: 1000, Count: 3},
+	}}
+
+	recorder := performRequest(t, newTestRouter(store), "/api/v1/companies/magnit/relations")
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if store.gotID != "magnit" {
+		t.Fatalf("repository got id %q, want magnit", store.gotID)
+	}
+	var body struct {
+		Items []CompanyRelation `json:"items"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(body.Items) != 1 || body.Items[0].Direction != "outbound" || body.Items[0].Count != 3 {
+		t.Fatalf("unexpected relations: %+v", body.Items)
+	}
+}
+
+func TestListCompanyRelationsNotFound(t *testing.T) {
+	store := &fakeStore{relErr: ErrNotFound}
+
+	recorder := performRequest(t, newTestRouter(store), "/api/v1/companies/missing/relations")
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+}
+
+func TestListCompanyRelationsError(t *testing.T) {
+	store := &fakeStore{relErr: errors.New("database unavailable")}
+
+	recorder := performRequest(t, newTestRouter(store), "/api/v1/companies/missing/relations")
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
 	}
 }
