@@ -1,10 +1,56 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "./api/client";
+import type { User } from "./api/types";
+import { Login } from "./features/auth/Login";
 import { CompanyList } from "./features/company/CompanyList";
 import { CompanyProfile } from "./features/company/CompanyProfile";
 import { Feed } from "./features/feed/Feed";
 
 export default function App() {
-  const [companyId, setCompanyId] = useState("magnit");
+  const [user, setUser] = useState<User | null>(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    api
+      .me()
+      .then(setUser)
+      .catch(() => setUser(null))
+      .finally(() => setChecking(false));
+  }, []);
+
+  if (checking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f5f7fa] text-sm text-slate-500">
+        Проверяем сессию…
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Login onSuccess={setUser} />;
+  }
+
+  return <Workspace user={user} onLogout={() => setUser(null)} />;
+}
+
+function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
+  const [companyId, setCompanyId] = useState("");
+  const companies = useQuery({
+    queryKey: ["companies"],
+    queryFn: api.companies,
+  });
+
+  useEffect(() => {
+    if (!companyId && companies.data?.items.length) {
+      setCompanyId(companies.data.items[0].id);
+    }
+  }, [companyId, companies.data]);
+
+  async function logout() {
+    await api.logout().catch(() => undefined);
+    onLogout();
+  }
 
   return (
     <div className="min-h-screen bg-[#f5f7fa] text-slate-900">
@@ -25,9 +71,17 @@ export default function App() {
             <span className="hidden rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 sm:inline">
               демо-режим
             </span>
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-              МК
+            <div className="hidden text-right sm:block">
+              <p className="text-xs font-semibold text-slate-700">{user.email}</p>
+              <p className="text-[11px] text-slate-400">{user.role}</p>
             </div>
+            <button
+              type="button"
+              onClick={logout}
+              className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              Выйти
+            </button>
           </div>
         </div>
       </header>
@@ -45,8 +99,20 @@ export default function App() {
         </aside>
 
         <div className="min-w-0">
-          <CompanyProfile companyId={companyId} />
-          <Feed companyId={companyId} />
+          {companyId ? (
+            <>
+              <CompanyProfile companyId={companyId} />
+              <Feed companyId={companyId} />
+            </>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+              {companies.isLoading
+                ? "Загружаем компании…"
+                : companies.isError
+                  ? "Не удалось загрузить компании. Проверьте, что сервисы запущены."
+                  : "Нет доступных компаний. Обратитесь к администратору за доступом."}
+            </div>
+          )}
           <footer className="py-8 text-center text-xs text-slate-400">
             Альфа Хак 2026 · gateway + company + content + insight + agent
           </footer>

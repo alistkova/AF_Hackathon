@@ -48,6 +48,7 @@ pids+=("$!")
 for _ in $(seq 1 40); do
   if curl -fsS "http://localhost:8081/healthz" >/dev/null 2>&1 && curl -fsS "http://localhost:8082/healthz" >/dev/null 2>&1; then
     bash scripts/seed.sh
+    bash scripts/bootstrap-users.sh
     break
   fi
   sleep 1

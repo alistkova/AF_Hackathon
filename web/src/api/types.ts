@@ -1,3 +1,9 @@
+export type User = {
+  id: string;
+  email: string;
+  role: "admin" | "analyst";
+};
+
 export type Company = {
   id: string;
   name: string;

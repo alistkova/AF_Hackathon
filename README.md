@@ -31,7 +31,16 @@ cp .env.example .env
 make demo
 ```
 
-Open <http://localhost:3000>. The demo starts Postgres, Redis, all Go services, the Python agent and the web app, then seeds companies and news. MinIO is an optional Compose profile because its public registry requires separate access; the current content scaffold does not use object storage yet.
+Open <http://localhost:3000>. The demo starts Postgres, Redis, all Go services, the Python agent and the web app, then seeds companies, people, payments and news. MinIO is an optional Compose profile because its public registry requires separate access; the current content scaffold does not use object storage yet.
+
+`make demo` also creates two demo accounts and prints them:
+
+| Account | Role | Sees |
+| --- | --- | --- |
+| `demo-admin@alfa.local` | `admin` | every company, can grant access |
+| `demo-client@alfa.local` | `analyst` | only the companies granted to it |
+
+The password for both is `demo-password` (`DEMO_PASSWORD`). Override the emails with `DEMO_ADMIN_EMAIL` and `DEMO_CLIENT_EMAIL`, and the granted companies with `DEMO_CLIENT_COMPANIES`. `make demo-users` recreates the accounts on an already running stack.
 
 Reset an empty demo:
 
@@ -189,6 +198,8 @@ curl -s -b /tmp/alfa.jar localhost:8080/api/v1/me/companies
 
 Passwords are bcrypt hashes and only SHA-256 token hashes are persisted. Sessions live in the `alfa_session` cookie (`SESSION_COOKIE_NAME`) or in an `Authorization: Bearer` header. The first registered user becomes `admin`, later users become `analyst`; granting and revoking company access requires `admin`.
 
+`/api/v1/companies` requires the same session. Without it the gateway returns `401`; an `analyst` only gets the companies granted to it, an `admin` gets everything. See [Access model](#access-model).
+
 Service details and configuration are in [services/identity/README.md](services/identity/README.md). The service contract is [contracts/openapi/identity.yaml](contracts/openapi/identity.yaml).
 
 ## Content API
@@ -230,17 +241,27 @@ services/agent/     Python/FastAPI agent
 services/agent/app/rag_system/   RAG system for Russian financial news
 web/                React + TypeScript + Tailwind
 infra/              Postgres roles/databases, MinIO
-seed/               demo companies and news
-scripts/            dev, demo, migrate, seed, smoke, gen
+seed/               demo companies, people, payments and news
+scripts/            dev, demo, migrate, seed, bootstrap-users, smoke, gen
 ```
 
 ## Current scaffold status
 
 - M0 vertical slice: gateway, company, web, Compose, seed, smoke.
+- M1 complete: identity with sessions, per-user company access enforced in the gateway, CSV import of companies, people and payments, company profiles and relations.
 - SSE job flow works end to end with the Python stub agent.
 - Content document storage and ingestion worker are scaffolds.
 - Insight jobs are in-memory for now; `analysis_jobs`/`analysis_events` tables are reserved for durable persistence.
 - Identity is implemented: register, login, logout, `/me`, and per-user company access with admin-only grants.
+
+## Access model
+
+The gateway validates the session against identity on every `/api/v1/companies` request and never trusts the client:
+
+- `admin` sees every company.
+- `analyst` sees only the companies in `company_access`.
+- The list is filtered by forwarding the allowed ids to the company service, and a detail request for a company outside that set returns `404`.
+- Company, content and insight are also published on their own ports for local debugging. Only the gateway applies access control, so public traffic must go through it.
 
 ## Contributing
 

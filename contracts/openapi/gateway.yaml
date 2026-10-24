@@ -15,6 +15,9 @@ paths:
   /api/v1/companies:
     get:
       operationId: listCompanies
+      description: Companies the current user may read. Admins see every company.
+      security:
+        - sessionCookie: []
       responses:
         "200":
           description: Company list
@@ -28,9 +31,15 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Company"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/companies/{companyId}:
     get:
       operationId: getCompany
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/PathCompanyId"
       responses:
@@ -40,11 +49,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CompanyDetails"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Company not found
+          description: Company not found or not accessible to the user
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/companies/{companyId}/people:
     get:
       operationId: listCompanyPeople
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/PathCompanyId"
       responses:
@@ -60,11 +75,17 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/CompanyPerson"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Company not found
+          description: Company not found or not accessible to the user
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/companies/{companyId}/relations:
     get:
       operationId: listCompanyRelations
+      security:
+        - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/PathCompanyId"
       responses:
@@ -80,8 +101,12 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/CompanyRelation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
-          description: Company not found
+          description: Company not found or not accessible to the user
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/feed:
     get:
       operationId: getFeed
@@ -146,6 +171,24 @@ paths:
         "404":
           description: Job not found
 components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: alfa_session
+  responses:
+    Unauthorized:
+      description: Session is missing or expired
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    IdentityUnavailable:
+      description: Identity service is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   parameters:
     CompanyId:
       name: company_id
@@ -232,7 +275,7 @@ components:
           type: string
     CompanyRelation:
       type: object
-      required: [company_id, company_name, type, relation]
+      required: [company_id, company_name, type, types, relation]
       properties:
         company_id:
           type: string
@@ -241,6 +284,11 @@ components:
         type:
           type: string
           enum: [group, shared_person, counterparty]
+        types:
+          type: array
+          items:
+            type: string
+            enum: [group, shared_person, counterparty]
         relation:
           type: string
         direction:
@@ -370,3 +418,11 @@ components:
           type: number
           minimum: 0
           maximum: 1
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

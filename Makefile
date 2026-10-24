@@ -15,7 +15,7 @@ UV ?= uv
 RAG_DATA_DIR ?= data
 RAG_INDEX_DIR ?= .rag/index
 
-.PHONY: help bootstrap check-tools infra infra-down migrate seed dev demo demo-reset up down logs psql test lint fmt gen smoke nix-check clean
+.PHONY: help bootstrap check-tools infra infra-down migrate seed dev demo demo-reset demo-users up down logs psql test lint fmt gen smoke nix-check clean
 
 .PHONY: rag-install rag-build rag-update rag-query rag-watch rag-stats rag-clean
 
@@ -58,6 +58,9 @@ demo: ## Build and run the full laptop demo
 demo-reset: ## Recreate the full demo from an empty database
 	$(COMPOSE) down -v
 	bash scripts/demo.sh
+
+demo-users: ## Create the demo admin and client accounts on a running stack
+	bash scripts/bootstrap-users.sh
 
 up: ## Start the full stack in Docker
 	$(COMPOSE) up -d --build --wait

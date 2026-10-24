@@ -1,9 +1,10 @@
-import type { Company, FeedItem, InsightJob } from "./types";
+import type { Company, FeedItem, InsightJob, User } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -19,7 +20,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function requestVoid(path: string, init?: RequestInit): Promise<void> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? `Request failed: ${response.status}`);
+  }
+}
+
 export const api = {
+  me: () => request<User>("/api/v1/me"),
+  login: (email: string, password: string) =>
+    request<{ token: string; user: User }>("/api/v1/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }).then((session) => session.user),
+  logout: () => requestVoid("/api/v1/auth/logout", { method: "POST" }),
   companies: () => request<{ items: Company[] }>("/api/v1/companies"),
   company: (id: string) => request<Company>(`/api/v1/companies/${id}`),
   feed: (companyId: string) =>

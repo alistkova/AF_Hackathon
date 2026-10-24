@@ -35,14 +35,15 @@ type CompanyPerson struct {
 }
 
 type CompanyRelation struct {
-	CompanyID    string  `json:"company_id"`
-	CompanyName  string  `json:"company_name"`
-	Type         string  `json:"type"`
-	Relation     string  `json:"relation"`
-	Direction    string  `json:"direction,omitempty"`
-	Amount       float64 `json:"amount,omitempty"`
-	Count        int64   `json:"count,omitempty"`
-	SharedPeople int64   `json:"shared_people,omitempty"`
+	CompanyID    string   `json:"company_id"`
+	CompanyName  string   `json:"company_name"`
+	Type         string   `json:"type"`
+	Types        []string `json:"types"`
+	Relation     string   `json:"relation"`
+	Direction    string   `json:"direction,omitempty"`
+	Amount       float64  `json:"amount,omitempty"`
+	Count        int64    `json:"count,omitempty"`
+	SharedPeople int64    `json:"shared_people,omitempty"`
 }
 
 type CompanyDetails struct {

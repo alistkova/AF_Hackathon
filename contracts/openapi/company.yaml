@@ -27,6 +27,8 @@ paths:
   /api/v1/companies:
     get:
       operationId: listCompanies
+      parameters:
+        - $ref: "#/components/parameters/CompanyIds"
       responses:
         "200":
           description: Company list ordered by name
@@ -105,6 +107,21 @@ components:
       schema:
         type: string
         minLength: 1
+    CompanyIds:
+      name: ids
+      in: query
+      required: false
+      description: |
+        Restricts the result to the given company ids. Repeat the parameter or pass a
+        comma-separated list. Omit it to list every company, which is what internal
+        callers do; the gateway always sets it to the companies the user may read.
+      style: form
+      explode: true
+      schema:
+        type: array
+        items:
+          type: string
+          minLength: 1
   responses:
     InternalError:
       description: Company service is unavailable
@@ -209,7 +226,7 @@ components:
             $ref: "#/components/schemas/CompanyPerson"
     CompanyRelation:
       type: object
-      required: [company_id, company_name, type, relation]
+      required: [company_id, company_name, type, types, relation]
       properties:
         company_id:
           type: string
@@ -217,7 +234,14 @@ components:
           type: string
         type:
           type: string
+          description: Strongest relation between the companies.
           enum: [group, shared_person, counterparty]
+        types:
+          type: array
+          description: Every relation found between the companies, strongest first.
+          items:
+            type: string
+            enum: [group, shared_person, counterparty]
         relation:
           type: string
         direction:

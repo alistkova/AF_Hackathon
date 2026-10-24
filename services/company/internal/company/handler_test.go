@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,8 @@ import (
 type fakeStore struct {
 	items      []Company
 	listErr    error
+	gotIDs     []string
+	gotFilter  bool
 	item       Company
 	getErr     error
 	gotID      string
@@ -27,7 +30,9 @@ type fakeStore struct {
 	relErr     error
 }
 
-func (f *fakeStore) List(context.Context) ([]Company, error) {
+func (f *fakeStore) List(_ context.Context, ids []string) ([]Company, error) {
+	f.gotIDs = ids
+	f.gotFilter = ids != nil
 	return f.items, f.listErr
 }
 
@@ -109,6 +114,46 @@ func TestListCompaniesEmpty(t *testing.T) {
 	}
 	if body := recorder.Body.String(); body != `{"items":[]}` {
 		t.Fatalf("body = %s, want empty items array", body)
+	}
+}
+
+func TestListCompaniesWithoutFilter(t *testing.T) {
+	store := &fakeStore{items: []Company{{ID: "magnit", Name: "Магнит"}}}
+
+	performRequest(t, newTestRouter(store), "/api/v1/companies")
+
+	if store.gotFilter {
+		t.Fatalf("store got filter %v, want no filter", store.gotIDs)
+	}
+}
+
+func TestListCompaniesWithFilter(t *testing.T) {
+	store := &fakeStore{items: []Company{{ID: "magnit", Name: "Магнит"}}}
+
+	performRequest(t, newTestRouter(store), "/api/v1/companies?ids=magnit&ids=yandex,magnit")
+
+	if !store.gotFilter {
+		t.Fatal("store got no filter, want filter")
+	}
+	want := []string{"magnit", "yandex"}
+	if !reflect.DeepEqual(store.gotIDs, want) {
+		t.Fatalf("ids = %v, want %v", store.gotIDs, want)
+	}
+}
+
+func TestListCompaniesWithEmptyFilter(t *testing.T) {
+	store := &fakeStore{items: []Company{}}
+
+	recorder := performRequest(t, newTestRouter(store), "/api/v1/companies?ids=")
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if !store.gotFilter {
+		t.Fatal("store got no filter, want empty filter")
+	}
+	if len(store.gotIDs) != 0 {
+		t.Fatalf("ids = %v, want empty", store.gotIDs)
 	}
 }
 
