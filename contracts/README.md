@@ -44,6 +44,12 @@ Rules:
 
 See `contracts/openapi/content.yaml` and `contracts/examples/news.json`.
 
+## Identity API
+
+`services/identity` owns users, sessions and company access. Cookies and bearer tokens are
+described in `contracts/openapi/identity.yaml`. The gateway forwards `/api/v1/auth`,
+`/api/v1/me` and `/api/v1/access` to it; `/api/v1/companies` stays with the company service.
+
 ## RAG chunk API
 
 `services/content` owns the `rag_chunks` table in `content_db`. The agent computes embeddings and calls the content service, so it never connects to `content_db`.

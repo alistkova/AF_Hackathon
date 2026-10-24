@@ -170,6 +170,27 @@ go run ./services/company/cmd/seed \
 
 Service details, the data model, CSV format and local debugging steps are in [services/company/README.md](services/company/README.md). The service contract is [contracts/openapi/company.yaml](contracts/openapi/company.yaml).
 
+## Identity API
+
+The identity service owns users, sessions and company access in `identity_db`. The gateway forwards `/api/v1/auth`, `/api/v1/me` and `/api/v1/access` to it:
+
+```bash
+curl -s -X POST localhost:8080/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"owner@example.com","password":"secret-pass"}'
+
+curl -s -c /tmp/alfa.jar -X POST localhost:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"owner@example.com","password":"secret-pass"}'
+
+curl -s -b /tmp/alfa.jar localhost:8080/api/v1/me
+curl -s -b /tmp/alfa.jar localhost:8080/api/v1/me/companies
+```
+
+Passwords are bcrypt hashes and only SHA-256 token hashes are persisted. Sessions live in the `alfa_session` cookie (`SESSION_COOKIE_NAME`) or in an `Authorization: Bearer` header. The first registered user becomes `admin`, later users become `analyst`; granting and revoking company access requires `admin`.
+
+Service details and configuration are in [services/identity/README.md](services/identity/README.md). The service contract is [contracts/openapi/identity.yaml](contracts/openapi/identity.yaml).
+
 ## Content API
 
 `GET /api/v1/news` returns the AI team news format: `news_id`, `title`, `published_at`, `source_name`, `source_url`, `full_text`, `tags`, `target_sectors`. The schema is in `contracts/openapi/content.yaml`.
@@ -203,6 +224,7 @@ contracts/          OpenAPI + SSE event schemas
 services/gateway/   public BFF, proxying, SSE relay
 services/company/   companies, people, relations
 services/content/   documents and chunks
+services/identity/  users, sessions, company access
 services/insight/   feed, jobs, SSE, agent orchestration
 services/agent/     Python/FastAPI agent
 services/agent/app/rag_system/   RAG system for Russian financial news
@@ -218,7 +240,7 @@ scripts/            dev, demo, migrate, seed, smoke, gen
 - SSE job flow works end to end with the Python stub agent.
 - Content document storage and ingestion worker are scaffolds.
 - Insight jobs are in-memory for now; `analysis_jobs`/`analysis_events` tables are reserved for durable persistence.
-- Identity is deferred; `identity_db` and role exist for later extraction.
+- Identity is implemented: register, login, logout, `/me`, and per-user company access with admin-only grants.
 
 ## Contributing
 

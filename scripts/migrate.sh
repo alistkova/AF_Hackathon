@@ -13,3 +13,4 @@ fi
 MIGRATE_ONLY=1 go run ./services/company/cmd/api
 MIGRATE_ONLY=1 go run ./services/content/cmd/api
 MIGRATE_ONLY=1 go run ./services/insight/cmd/api
+MIGRATE_ONLY=1 go run ./services/identity/cmd/api

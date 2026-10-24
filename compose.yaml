@@ -20,6 +20,13 @@ x-insight-env: &insight-env
   ANALYZER_MODE: agent
   AGENT_TIMEOUT: ${AGENT_TIMEOUT:-120s}
 
+x-identity-env: &identity-env
+  IDENTITY_ADDR: ":8086"
+  IDENTITY_DATABASE_URL: postgres://identity_svc:identity@postgres:5432/identity_db?sslmode=disable
+  IDENTITY_SESSION_TTL: ${IDENTITY_SESSION_TTL:-168h}
+  SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-alfa_session}
+  SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -103,6 +110,23 @@ services:
       timeout: 3s
       retries: 30
 
+  identity:
+    build:
+      context: .
+      dockerfile: services/identity/Dockerfile
+    image: alfa-hack/identity:local
+    environment: *identity-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8086:8086"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8086/healthz >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
   agent:
     build:
       context: services/agent
@@ -153,6 +177,7 @@ services:
       COMPANY_URL: http://company:8081
       CONTENT_URL: http://content:8082
       INSIGHT_URL: http://insight:8083
+      IDENTITY_URL: http://identity:8086
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-alfa_session}
       SESSION_SECRET: ${SESSION_SECRET:-dev-only-change-me}
     depends_on:
@@ -161,6 +186,8 @@ services:
       content:
         condition: service_healthy
       insight:
+        condition: service_healthy
+      identity:
         condition: service_healthy
     ports:
       - "${GATEWAY_PORT:-8080}:8080"

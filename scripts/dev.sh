@@ -30,6 +30,8 @@ go run ./services/content/cmd/api &
 pids+=("$!")
 go run ./services/insight/cmd/api &
 pids+=("$!")
+go run ./services/identity/cmd/api &
+pids+=("$!")
 go run ./services/gateway/cmd/api &
 pids+=("$!")
 

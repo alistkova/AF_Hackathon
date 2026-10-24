@@ -4,39 +4,51 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/alfa-hack/alfa-hack/internal/platform/httpx"
 	"github.com/gin-gonic/gin"
 )
 
 func AuthMiddleware(store Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := ""
-		if h := c.GetHeader("Authorization"); h != "" {
-			parts := strings.Fields(h)
-			if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
-				token = parts[1]
-			}
-		}
+		token := extractToken(c)
 		if token == "" {
-			for _, name := range []string{"session", "session_token", "token"} {
-				if v, err := c.Cookie(name); err == nil && v != "" {
-					token = v
-					break
-				}
-			}
-		}
-		if token == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"code": "unauthorized"})
-			c.Abort()
+			httpx.Error(c, http.StatusUnauthorized, "unauthorized", "Требуется авторизация")
 			return
 		}
-		u, err := store.Me(token)
+
+		user, err := store.Me(c.Request.Context(), token)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"code": "unauthorized"})
-			c.Abort()
+			httpx.Error(c, http.StatusUnauthorized, "unauthorized", "Сессия недействительна")
 			return
 		}
+
 		c.Set("token", token)
-		c.Set("userID", u.ID)
+		c.Set("userID", user.ID)
+		c.Set("userEmail", user.Email)
+		c.Set("role", user.Role)
 		c.Next()
 	}
+}
+
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetString("role") != RoleAdmin {
+			httpx.Error(c, http.StatusForbidden, "forbidden", "Недостаточно прав")
+			return
+		}
+		c.Next()
+	}
+}
+
+func extractToken(c *gin.Context) string {
+	if header := c.GetHeader("Authorization"); header != "" {
+		parts := strings.Fields(header)
+		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			return parts[1]
+		}
+	}
+	if value, err := c.Cookie(cookieName()); err == nil {
+		return value
+	}
+	return ""
 }

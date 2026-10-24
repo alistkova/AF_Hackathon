@@ -1,0 +1,284 @@
+openapi: 3.1.0
+info:
+  title: Identity Service API
+  version: 0.1.0
+  description: Users, sessions and company access for the Alfa Hack news analytics prototype.
+servers:
+  - url: http://identity:8086
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, service]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+                  service:
+                    type: string
+                    const: identity
+  /api/v1/auth/register:
+    post:
+      operationId: registerUser
+      description: Creates a user. The first registered user becomes an admin, every later user is an analyst.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Email or password does not meet the requirements
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Email is already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/auth/login:
+    post:
+      operationId: loginUser
+      description: Verifies the credentials, opens a session and sets the session cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "200":
+          description: Session opened
+          headers:
+            Set-Cookie:
+              description: HttpOnly session cookie named by `SESSION_COOKIE_NAME`.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          description: Malformed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/auth/logout:
+    post:
+      operationId: logoutUser
+      description: Revokes the current session and clears the session cookie.
+      security:
+        - sessionCookie: []
+      responses:
+        "204":
+          description: Session revoked
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/me:
+    get:
+      operationId: currentUser
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/me/companies:
+    get:
+      operationId: listAccessibleCompanies
+      description: Company identifiers the current user is allowed to see.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Accessible company identifiers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/access/grant:
+    post:
+      operationId: grantCompanyAccess
+      description: Grants a user access to a company. Admin only.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessGrant"
+      responses:
+        "204":
+          description: Access granted
+        "400":
+          description: Malformed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Current user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/access/revoke:
+    post:
+      operationId: revokeCompanyAccess
+      description: Revokes a user's access to a company. Admin only.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccessGrant"
+      responses:
+        "204":
+          description: Access revoked
+        "400":
+          description: Malformed request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Current user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: alfa_session
+  responses:
+    Unauthorized:
+      description: Session is missing or expired
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Identity service is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Credentials:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+    User:
+      type: object
+      required: [id, email, role]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, analyst]
+    Session:
+      type: object
+      required: [token, expires_at, user]
+      properties:
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        user:
+          $ref: "#/components/schemas/User"
+    AccessGrant:
+      type: object
+      required: [user_id, company_id]
+      properties:
+        user_id:
+          type: string
+          minLength: 1
+        company_id:
+          type: string
+          minLength: 1
+    CompanyList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: string
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string

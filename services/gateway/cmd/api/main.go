@@ -39,7 +39,9 @@ func main() {
 			companyProxy(c)
 		case path == "/api/v1/auth" || strings.HasPrefix(path, "/api/v1/auth/"):
 			identityProxy(c)
-		case path == "/api/v1/me" || path == "/api/v1/access" || strings.HasPrefix(path, "/api/v1/access/"):
+		case path == "/api/v1/me" || strings.HasPrefix(path, "/api/v1/me/"):
+			identityProxy(c)
+		case path == "/api/v1/access" || strings.HasPrefix(path, "/api/v1/access/"):
 			identityProxy(c)
 		case path == "/api/v1/news" || strings.HasPrefix(path, "/api/v1/news/"):
 			contentProxy(c)
