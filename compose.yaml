@@ -7,6 +7,7 @@ x-company-env: &company-env
 x-content-env: &content-env
   CONTENT_ADDR: ":8082"
   CONTENT_DATABASE_URL: postgres://content_svc:content@postgres:5432/content_db?sslmode=disable
+  CONTENT_DATA_DIR: /data/content
   MINIO_ENDPOINT: http://minio:9000
   MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
   MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio12345}
@@ -104,6 +105,8 @@ services:
         condition: service_healthy
     ports:
       - "8082:8082"
+    volumes:
+      - contentdata:/data/content
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8082/healthz >/dev/null"]
       interval: 3s
@@ -216,3 +219,4 @@ services:
 volumes:
   pgdata:
   miniodata:
+  contentdata:

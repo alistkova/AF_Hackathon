@@ -204,7 +204,20 @@ Service details and configuration are in [services/identity/README.md](services/
 
 ## Content API
 
-`GET /api/v1/news` returns the AI team news format: `news_id`, `title`, `published_at`, `source_name`, `source_url`, `full_text`, `tags`, `target_sectors`. The schema is in `contracts/openapi/content.yaml`.
+`GET /api/v1/news` returns the AI team news format (`document_id`, `news_id`, `title`, `published_at`, `source_name`, `source_url`, `full_text`, `tags`, `target_sectors`) and accepts `kind`, `sector`, `tag`, `source`, `from`, `to`, `limit` and `offset`. The total is returned in `X-Total-Count`.
+
+Ingestion goes through `POST /api/v1/documents` (JSON) or `POST /api/v1/documents/pdf` (multipart). Both normalise the text, reject duplicates by canonical URL and by a content hash, and split the body into overlapping chunks. Ranked search across news and PDFs is `GET /api/v1/search?q=`.
+
+```bash
+curl -s -X POST localhost:8080/api/v1/documents -H 'Content-Type: application/json' \
+  -d '{"items":[{"news_id":"n1","title":"Ставка","full_text":"..."}]}'
+
+curl -s -X POST localhost:8080/api/v1/documents/pdf -F 'file=@material.pdf' -F 'source_name=Альфа-Банк'
+
+curl -s 'localhost:8080/api/v1/search?q=ключевая%20ставка'
+```
+
+PDF text extraction uses `pdftotext` from poppler-utils, which the content image installs. Raw files land in the `contentdata` volume. The schema is in `contracts/openapi/content.yaml`, the details are in [services/content/README.md](services/content/README.md).
 
 RAG chunks are stored by the content service as well: `POST /api/v1/rag/chunks` upserts embedded chunks, `POST /api/v1/rag/chunks/search` and `POST /api/v1/rag/chunks/list` query them by metadata, `GET /api/v1/rag/chunks/count` counts them and `DELETE /api/v1/rag/chunks` clears the table. The agent uses these endpoints and never opens `content_db`.
 
@@ -250,7 +263,8 @@ scripts/            dev, demo, migrate, seed, bootstrap-users, smoke, gen
 - M0 vertical slice: gateway, company, web, Compose, seed, smoke.
 - M1 complete: identity with sessions, per-user company access enforced in the gateway, CSV import of companies, people and payments, company profiles and relations.
 - SSE job flow works end to end with the Python stub agent.
-- Content document storage and ingestion worker are scaffolds.
+- Content owns news and PDF documents: ingestion with deduplication, chunking, full-text search and raw file storage.
+- The ingestion worker is still a no-op; documents arrive through the API and the seed command.
 - Insight jobs are in-memory for now; `analysis_jobs`/`analysis_events` tables are reserved for durable persistence.
 - Identity is implemented: register, login, logout, `/me`, and per-user company access with admin-only grants.
 

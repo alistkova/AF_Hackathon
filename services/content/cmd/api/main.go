@@ -39,13 +39,20 @@ func main() {
 		return
 	}
 
-	handler := content.NewHandler(content.NewRepository(pool), logger)
+	repo := content.NewRepository(pool)
+	files := content.NewLocalStorage(config.String("CONTENT_DATA_DIR", "./.data/content"))
+	handler := content.NewHandler(repo, files, logger)
 	router := gin.New()
 	router.Use(gin.Recovery(), obs.RequestID())
 	router.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "content"})
 	})
 	router.GET("/api/v1/news", handler.List)
+	router.GET("/api/v1/news/:id", handler.Get)
+	router.GET("/api/v1/search", handler.Search)
+	router.POST("/api/v1/documents", handler.Ingest)
+	router.POST("/api/v1/documents/pdf", handler.UploadPDF)
+	router.GET("/api/v1/documents/:id/chunks", handler.Chunks)
 	router.POST("/api/v1/rag/chunks", handler.UpsertRAGChunks)
 	router.POST("/api/v1/rag/chunks/search", handler.SearchRAGChunks)
 	router.POST("/api/v1/rag/chunks/list", handler.ListRAGChunks)

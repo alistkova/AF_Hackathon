@@ -107,6 +107,111 @@ paths:
           description: Company not found or not accessible to the user
         "503":
           $ref: "#/components/responses/IdentityUnavailable"
+  /api/v1/news:
+    get:
+      operationId: listNews
+      description: Documents and news. Filters combine with AND; `X-Total-Count` carries the total.
+      parameters:
+        - name: kind
+          in: query
+          schema:
+            type: string
+        - name: sector
+          in: query
+          schema:
+            type: string
+        - name: tag
+          in: query
+          schema:
+            type: string
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: Documents
+          headers:
+            X-Total-Count:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NewsItem"
+  /api/v1/news/{newsId}:
+    get:
+      operationId: getNews
+      parameters:
+        - name: newsId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NewsItem"
+        "404":
+          description: Document not found
+  /api/v1/search:
+    get:
+      operationId: searchDocuments
+      description: Ranked full-text search across news and PDF documents.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: kind
+          in: query
+          schema:
+            type: string
+        - name: sector
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Ranked matches
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "400":
+          description: Missing query
   /api/v1/feed:
     get:
       operationId: getFeed
@@ -418,6 +523,51 @@ components:
           type: number
           minimum: 0
           maximum: 1
+    NewsItem:
+      type: object
+      required: [document_id, news_id, title, published_at, source_name, source_url, tags, target_sectors]
+      properties:
+        document_id:
+          type: string
+        news_id:
+          type: string
+        title:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        source_name:
+          type: string
+        source_url:
+          type: string
+        full_text:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        target_sectors:
+          type: array
+          items:
+            type: string
+    SearchHit:
+      allOf:
+        - $ref: "#/components/schemas/NewsItem"
+        - type: object
+          required: [rank]
+          properties:
+            rank:
+              type: number
+    SearchResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchHit"
+        total:
+          type: integer
     Error:
       type: object
       required: [code, message]

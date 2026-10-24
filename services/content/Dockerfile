@@ -9,8 +9,9 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/content-worker ./s
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/content-seed ./services/content/cmd/seed
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates && adduser -D -H app
+RUN apk add --no-cache ca-certificates poppler-utils && adduser -D -H app
 WORKDIR /app
+RUN mkdir -p /data/content && chown -R app:app /data
 COPY --from=build /out/content /app/content
 COPY --from=build /out/content-worker /app/content-worker
 COPY --from=build /out/content-seed /app/content-seed

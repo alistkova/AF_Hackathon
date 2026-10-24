@@ -15,14 +15,47 @@ import (
 )
 
 type fakeStore struct {
-	searchQuery  RAGSearchQuery
-	searchChunks []RAGChunk
-	upsertChunks []RAGChunkInput
-	count        int64
+	searchQuery   RAGSearchQuery
+	searchChunks  []RAGChunk
+	upsertChunks  []RAGChunkInput
+	count         int64
+	documents     []NewsItem
+	documentTotal int
+	documentErr   error
+	gotFilter     DocumentFilter
+	document      NewsItem
+	documentFound bool
+	hits          []SearchHit
+	ingested      []IngestInput
+	chunks        []DocumentChunk
 }
 
-func (f *fakeStore) ListDocuments(context.Context, int) ([]NewsItem, error) {
-	return nil, nil
+func (f *fakeStore) ListDocuments(_ context.Context, filter DocumentFilter) ([]NewsItem, int, error) {
+	f.gotFilter = filter
+	return f.documents, f.documentTotal, f.documentErr
+}
+
+func (f *fakeStore) GetDocument(_ context.Context, id string) (NewsItem, error) {
+	if !f.documentFound {
+		return NewsItem{}, ErrNotFound
+	}
+	item := f.document
+	item.NewsID = id
+	return item, nil
+}
+
+func (f *fakeStore) SearchDocuments(_ context.Context, _ string, filter DocumentFilter) ([]SearchHit, int, error) {
+	f.gotFilter = filter
+	return f.hits, len(f.hits), f.documentErr
+}
+
+func (f *fakeStore) IngestDocument(_ context.Context, input IngestInput) (IngestResult, error) {
+	f.ingested = append(f.ingested, input)
+	return IngestResult{Status: IngestCreated, DocumentID: input.DocumentID, NewsID: input.NewsID, Chunks: 1}, nil
+}
+
+func (f *fakeStore) ListDocumentChunks(context.Context, string) ([]DocumentChunk, error) {
+	return f.chunks, nil
 }
 
 func (f *fakeStore) UpsertRAGChunks(_ context.Context, chunks []RAGChunkInput) (int, error) {
@@ -50,7 +83,7 @@ func (f *fakeStore) DeleteRAGChunks(context.Context) (int64, error) {
 func newTestRouter(repo store) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	handler := NewHandler(repo, logger)
+	handler := NewHandler(repo, nil, logger)
 	router := gin.New()
 	router.POST("/api/v1/rag/chunks", handler.UpsertRAGChunks)
 	router.POST("/api/v1/rag/chunks/search", handler.SearchRAGChunks)

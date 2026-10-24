@@ -63,6 +63,8 @@ func New(cfg Config) *gin.Engine {
 			identityProxy(c)
 		case path == "/api/v1/news" || strings.HasPrefix(path, "/api/v1/news/"):
 			contentProxy(c)
+		case path == "/api/v1/search":
+			contentProxy(c)
 		case path == "/api/v1/feed" || strings.HasPrefix(path, "/api/v1/insights/"):
 			insightProxy(c)
 		default:
