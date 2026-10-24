@@ -40,6 +40,34 @@ func main() {
 	}
 
 	store := identity.NewDBStore(pool)
+	pruneSessions := func() {
+		removed, err := store.PruneSessions(ctx)
+		if err != nil {
+			logger.Error("prune sessions", "error", err)
+			return
+		}
+		if removed > 0 {
+			logger.Info("pruned sessions", "count", removed)
+		}
+	}
+	pruneSessions()
+	go func() {
+		interval := config.Duration("IDENTITY_SESSION_PRUNE_INTERVAL", time.Hour)
+		if interval <= 0 {
+			interval = time.Hour
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				pruneSessions()
+			}
+		}
+	}()
+
 	handler := identity.NewHandler(store, logger)
 	auth := identity.AuthMiddleware(store)
 	router := gin.New()

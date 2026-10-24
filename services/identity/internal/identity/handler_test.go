@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -17,6 +19,7 @@ import (
 
 func TestMain(m *testing.M) {
 	passwordCost = bcrypt.MinCost
+	_ = os.Setenv("IDENTITY_REGISTRATION_ENABLED", "true")
 	os.Exit(m.Run())
 }
 
@@ -307,5 +310,61 @@ func TestGrantAccessUnknownUser(t *testing.T) {
 	rec := performWithToken(router, http.MethodPost, "/api/v1/access/grant", `{"user_id":"missing","company_id":"c1"}`, adminSession.Token)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestRegisterCanBeDisabled(t *testing.T) {
+	t.Setenv("IDENTITY_REGISTRATION_ENABLED", "false")
+	router := newTestRouter(NewMemStore())
+
+	rec := perform(router, http.MethodPost, "/api/v1/auth/register", `{"email":"user@example.com","password":"secret-pass"}`)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestLoginIsRateLimited(t *testing.T) {
+	t.Setenv("IDENTITY_LOGIN_MAX_ATTEMPTS", "2")
+	t.Setenv("IDENTITY_LOGIN_WINDOW", "1m")
+
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "user@example.com", "secret-pass")
+
+	for attempt := 0; attempt < 2; attempt++ {
+		rec := perform(router, http.MethodPost, "/api/v1/auth/login", `{"email":"user@example.com","password":"wrong-pass"}`)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status %d, want %d", attempt, rec.Code, http.StatusUnauthorized)
+		}
+	}
+
+	rec := perform(router, http.MethodPost, "/api/v1/auth/login", `{"email":"user@example.com","password":"wrong-pass"}`)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("blocked status %d, want %d", rec.Code, http.StatusTooManyRequests)
+	}
+	if rec.Header().Get("Retry-After") == "" {
+		t.Fatal("Retry-After header is missing")
+	}
+
+	rec = perform(router, http.MethodPost, "/api/v1/auth/login", `{"email":"user@example.com","password":"secret-pass"}`)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("correct password while blocked: status %d, want %d", rec.Code, http.StatusTooManyRequests)
+	}
+}
+
+func TestPruneSessionsRemovesExpired(t *testing.T) {
+	t.Setenv("IDENTITY_SESSION_TTL", "1ms")
+	store := NewMemStore()
+	router := newTestRouter(store)
+	registerUser(t, router, "user@example.com", "secret-pass")
+	loginUser(t, router, "user@example.com", "secret-pass")
+
+	time.Sleep(10 * time.Millisecond)
+
+	removed, err := store.PruneSessions(context.Background())
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
 	}
 }

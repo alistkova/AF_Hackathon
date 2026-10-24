@@ -24,6 +24,10 @@ register() {
     -d "{\"email\":\"$email\",\"password\":\"$PASSWORD\"}")"
   case "$code" in
     201|409) ;;
+    403)
+      echo "bootstrap: registration is disabled; set IDENTITY_REGISTRATION_ENABLED=true to create demo users" >&2
+      return 1
+      ;;
     *)
       echo "bootstrap: register $email returned $code" >&2
       return 1

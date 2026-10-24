@@ -52,6 +52,11 @@ func cookieSecure() bool {
 	return strings.EqualFold(config.String("SESSION_COOKIE_SECURE", "false"), "true")
 }
 
+func registrationEnabled() bool {
+	value := strings.ToLower(strings.TrimSpace(config.String("IDENTITY_REGISTRATION_ENABLED", "false")))
+	return value == "true" || value == "1" || value == "yes" || value == "on"
+}
+
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }

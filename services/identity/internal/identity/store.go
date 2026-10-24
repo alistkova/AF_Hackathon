@@ -139,3 +139,18 @@ func (m *MemStore) RevokeAccess(_ context.Context, userID, companyID string) err
 	delete(m.acc[userID], companyID)
 	return nil
 }
+
+func (m *MemStore) PruneSessions(_ context.Context) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+	var removed int64
+	for key, session := range m.sess {
+		if now.After(session.expiresAt) {
+			delete(m.sess, key)
+			removed++
+		}
+	}
+	return removed, nil
+}

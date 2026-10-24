@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/alfa-hack/alfa-hack/internal/platform/httpx"
@@ -19,6 +20,7 @@ type Store interface {
 	AccessibleCompanies(ctx context.Context, userID string) ([]string, error)
 	GrantAccess(ctx context.Context, userID, companyID string) error
 	RevokeAccess(ctx context.Context, userID, companyID string) error
+	PruneSessions(ctx context.Context) (int64, error)
 }
 
 type User struct {
@@ -34,12 +36,13 @@ type Session struct {
 }
 
 type Handler struct {
-	store  Store
-	logger *slog.Logger
+	store   Store
+	limiter *loginLimiter
+	logger  *slog.Logger
 }
 
 func NewHandler(store Store, logger *slog.Logger) *Handler {
-	return &Handler{store: store, logger: logger}
+	return &Handler{store: store, limiter: newLoginLimiter(), logger: logger}
 }
 
 type credentialsRequest struct {
@@ -48,6 +51,11 @@ type credentialsRequest struct {
 }
 
 func (h *Handler) Register(c *gin.Context) {
+	if !registrationEnabled() {
+		httpx.Error(c, http.StatusForbidden, "registration_disabled", "Регистрация отключена")
+		return
+	}
+
 	var req credentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpx.Error(c, http.StatusBadRequest, "invalid_request", "Укажите email и пароль")
@@ -77,8 +85,20 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
+	key := normalizeEmail(req.Email)
+	if ok, wait := h.limiter.allow(key); !ok {
+		seconds := int(wait.Seconds())
+		if seconds < 1 {
+			seconds = 1
+		}
+		c.Header("Retry-After", strconv.Itoa(seconds))
+		httpx.Error(c, http.StatusTooManyRequests, "too_many_attempts", "Слишком много попыток входа, попробуйте позже")
+		return
+	}
+
 	session, err := h.store.Authenticate(c.Request.Context(), req.Email, req.Password)
 	if errors.Is(err, ErrInvalidCredentials) {
+		h.limiter.fail(key)
 		httpx.Error(c, http.StatusUnauthorized, "invalid_credentials", "Неверный email или пароль")
 		return
 	}
@@ -87,6 +107,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
+	h.limiter.reset(key)
 	setSessionCookie(c, session)
 	c.JSON(http.StatusOK, session)
 }

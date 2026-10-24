@@ -18,6 +18,8 @@ func NewDBStore(pool *pgxpool.Pool) *DBStore {
 	return &DBStore{pool: pool}
 }
 
+const registrationLockKey int64 = 0x6964656e74697479
+
 func (d *DBStore) Register(ctx context.Context, email, password string) (User, error) {
 	email, err := validateCredentials(email, password)
 	if err != nil {
@@ -30,18 +32,38 @@ func (d *DBStore) Register(ctx context.Context, email, password string) (User, e
 	}
 
 	user := User{ID: newUserID(), Email: email}
-	err = d.pool.QueryRow(ctx, `
-		INSERT INTO users (id, email, password_hash, role)
-		SELECT $1, $2, $3, CASE WHEN EXISTS (SELECT 1 FROM users) THEN $4 ELSE $5 END
-		RETURNING role
-	`, user.ID, user.Email, hash, RoleAnalyst, RoleAdmin).Scan(&user.Role)
+	tx, err := d.pool.Begin(ctx)
 	if err != nil {
+		return User{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, registrationLockKey); err != nil {
+		return User{}, err
+	}
+
+	var users int64
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM users`).Scan(&users); err != nil {
+		return User{}, err
+	}
+	user.Role = RoleAnalyst
+	if users == 0 {
+		user.Role = RoleAdmin
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ($1, $2, $3, $4)
+	`, user.ID, user.Email, hash, user.Role); err != nil {
 		if isUniqueViolation(err) {
 			return User{}, ErrEmailExists
 		}
 		return User{}, err
 	}
 
+	if err := tx.Commit(ctx); err != nil {
+		return User{}, err
+	}
 	return user, nil
 }
 
@@ -150,6 +172,14 @@ func (d *DBStore) RevokeAccess(ctx context.Context, userID, companyID string) er
 		DELETE FROM company_access WHERE user_id = $1 AND company_id = $2
 	`, userID, companyID)
 	return err
+}
+
+func (d *DBStore) PruneSessions(ctx context.Context) (int64, error) {
+	tag, err := d.pool.Exec(ctx, `DELETE FROM sessions WHERE expires_at <= now()`)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (d *DBStore) requireUser(ctx context.Context, userID string) error {

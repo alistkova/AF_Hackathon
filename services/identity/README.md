@@ -13,7 +13,11 @@ requests to it.
 - Session tokens are random 256-bit values. Only the SHA-256 hash of a token is stored, so a
   database dump does not leak usable sessions.
 - Sessions expire after `IDENTITY_SESSION_TTL` (default `168h`). Expired rows are pruned on
-  every login and rejected on every read.
+  login, on a background interval (`IDENTITY_SESSION_PRUNE_INTERVAL`) and rejected on every read.
+- Successful logins reset the per-email failure counter. After `IDENTITY_LOGIN_MAX_ATTEMPTS`
+  failures inside `IDENTITY_LOGIN_WINDOW` the service answers `429` with `Retry-After`.
+- Registration is disabled unless `IDENTITY_REGISTRATION_ENABLED` is true. The demo environment
+  enables it so the bootstrap script can create accounts.
 - The client may authenticate with the session cookie or with `Authorization: Bearer <token>`.
 - The first registered user becomes `admin`; every later registration becomes `analyst`.
   Granting and revoking company access requires `admin`.
@@ -23,9 +27,9 @@ requests to it.
 | Method | Path                     | Access        | Purpose                                |
 | ------ | ------------------------ | ------------- | -------------------------------------- |
 | GET    | `/healthz`               | public        | Liveness probe                         |
-| POST   | `/api/v1/auth/register`  | public        | Create a user                          |
+| POST   | `/api/v1/auth/register`  | public*       | Create a user (when enabled)           |
 | POST   | `/api/v1/auth/login`     | public        | Open a session and set the cookie      |
-| POST   | `/api/v1/auth/logout`    | session       | Revoke the current session             |
+| POST   | `/api/v1/auth/logout`    | public        | Revoke the token if present, clear cookie |
 | GET    | `/api/v1/me`             | session       | Current user id, email and role        |
 | GET    | `/api/v1/me/companies`   | session       | Company ids the user may read          |
 | POST   | `/api/v1/access/grant`   | admin         | Grant a user access to a company       |
@@ -34,7 +38,8 @@ requests to it.
 The schemas are in `contracts/openapi/identity.yaml`.
 
 `/api/v1/me/companies` lives under `/me` on purpose: `/api/v1/companies` belongs to the
-company service and is routed there by the gateway.
+company service and is routed there by the gateway. It lists explicit grants; admins are not
+enumerated because the gateway bypasses the company check for them.
 
 ## Requirements
 
@@ -48,6 +53,10 @@ company service and is routed there by the gateway.
 | `IDENTITY_ADDR`           | `:8086`                                                                        |
 | `IDENTITY_DATABASE_URL`   | `postgres://identity_svc:identity@localhost:5432/identity_db?sslmode=disable`   |
 | `IDENTITY_SESSION_TTL`    | `168h`                                                                         |
+| `IDENTITY_SESSION_PRUNE_INTERVAL` | `1h`                                                                   |
+| `IDENTITY_REGISTRATION_ENABLED` | `false` (the demo `.env` sets it to `true`)                            |
+| `IDENTITY_LOGIN_MAX_ATTEMPTS` | `5`                                                                        |
+| `IDENTITY_LOGIN_WINDOW`   | `15m`                                                                          |
 | `SESSION_COOKIE_NAME`     | `alfa_session`                                                                 |
 | `SESSION_COOKIE_SECURE`   | `false` (set to `true` behind HTTPS)                                           |
 | `MIGRATE_ONLY`            | unset (set to `1` to apply migrations and exit)                                |

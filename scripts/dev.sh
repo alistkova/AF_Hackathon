@@ -11,6 +11,8 @@ set -a
 source .env
 set +a
 
+export IDENTITY_REGISTRATION_ENABLED="${IDENTITY_REGISTRATION_ENABLED:-true}"
+
 if [[ "${SKIP_INFRA:-0}" != "1" ]]; then
   docker compose -f compose.dev.yaml up -d --wait
 fi
