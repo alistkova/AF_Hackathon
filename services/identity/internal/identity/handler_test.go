@@ -15,9 +15,12 @@ func newTestRouter(store Store) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	handler := NewHandler(store)
 	router := gin.New()
+	auth := AuthMiddleware(store)
 	router.POST("/api/v1/auth/register", handler.Register)
 	router.POST("/api/v1/auth/login", handler.Login)
-	router.GET("/api/v1/me", handler.Me)
+	protected := router.Group("/api/v1")
+	protected.Use(auth)
+	protected.GET("/me", handler.Me)
 	return router
 }
 

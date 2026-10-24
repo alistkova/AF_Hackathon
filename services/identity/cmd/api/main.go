@@ -39,7 +39,9 @@ func main() {
 		return
 	}
 
-	handler := identity.NewHandler(identity.NewMemStore())
+	store := identity.NewDBStore(pool)
+	handler := identity.NewHandler(store)
+	auth := identity.AuthMiddleware(store)
 	router := gin.New()
 	router.Use(gin.Recovery(), obs.RequestID())
 	router.GET("/healthz", func(c *gin.Context) {
@@ -49,10 +51,12 @@ func main() {
 	v1.POST("/auth/register", handler.Register)
 	v1.POST("/auth/login", handler.Login)
 	v1.POST("/auth/logout", handler.Logout)
-	v1.GET("/me", handler.Me)
-	v1.GET("/companies", handler.AccessibleCompanies)
-	v1.POST("/access/grant", handler.GrantAccess)
-	v1.POST("/access/revoke", handler.RevokeAccess)
+	protected := v1.Group("")
+	protected.Use(auth)
+	protected.GET("/me", handler.Me)
+	protected.GET("/companies", handler.AccessibleCompanies)
+	protected.POST("/access/grant", handler.GrantAccess)
+	protected.POST("/access/revoke", handler.RevokeAccess)
 
 	server := &http.Server{
 		Addr:              config.String("IDENTITY_ADDR", ":8086"),

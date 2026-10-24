@@ -81,8 +81,8 @@ func (h *Handler) Logout(c *gin.Context) {
 }
 
 func (h *Handler) Me(c *gin.Context) {
-	token := c.GetHeader("Authorization")
-	u, err := h.store.Me(token)
+	token, _ := c.Get("token")
+	u, err := h.store.Me(token.(string))
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"code": "unauthorized"})
 		return
@@ -91,13 +91,8 @@ func (h *Handler) Me(c *gin.Context) {
 }
 
 func (h *Handler) AccessibleCompanies(c *gin.Context) {
-	token := c.GetHeader("Authorization")
-	u, err := h.store.Me(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"code": "unauthorized"})
-		return
-	}
-	ids, err := h.store.AccessibleCompanies(u.ID)
+	userID, _ := c.Get("userID")
+	ids, err := h.store.AccessibleCompanies(userID.(string))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": "companies_unavailable"})
 		return
