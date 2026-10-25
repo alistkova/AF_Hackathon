@@ -325,10 +325,15 @@ paths:
   /api/v1/feed:
     get:
       operationId: getFeed
+      description: |
+        Ranked company feed built from content-service news. Items are ordered by
+        relevance and then by publication date.
       security:
         - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/CompanyId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
       responses:
         "200":
           description: Ranked feed
@@ -336,18 +341,23 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required: [items, total]
                 properties:
                   items:
                     type: array
                     items:
                       $ref: "#/components/schemas/FeedItem"
+                  total:
+                    type: integer
+                    minimum: 0
         "400":
-          description: company_id is missing
+          description: company_id is missing or pagination is invalid
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           description: Company not found or not accessible to the user
+        "502":
+          description: Company or content service is unavailable
         "503":
           $ref: "#/components/responses/IdentityUnavailable"
   /api/v1/insights/jobs:
@@ -439,6 +449,23 @@ components:
       required: true
       schema:
         type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 30
+    Offset:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
     PathCompanyId:
       name: companyId
       in: path
@@ -600,7 +627,16 @@ components:
           type: string
     FeedItem:
       type: object
-      required: [event_id, company_id, title, summary, published_at]
+      required:
+        - event_id
+        - company_id
+        - title
+        - summary
+        - source
+        - url
+        - published_at
+        - relevance
+        - reasons
       properties:
         event_id:
           type: string
@@ -610,9 +646,22 @@ components:
           type: string
         summary:
           type: string
+        source:
+          type: string
+        url:
+          type: string
+          format: uri
         published_at:
           type: string
           format: date-time
+        relevance:
+          type: number
+          minimum: 0
+          maximum: 1
+        reasons:
+          type: array
+          items:
+            type: string
     Source:
       type: object
       required: [source_id, title, url]
