@@ -36,6 +36,8 @@ type ContentClient struct {
 	cacheLimit int
 	cache      []NewsItem
 	hasCache   bool
+
+	fetchMu sync.Mutex
 }
 
 func NewContentClient(baseURL string) *ContentClient {
@@ -51,17 +53,60 @@ func (c *ContentClient) ListNews(ctx context.Context, limit int) ([]NewsItem, er
 		limit = 200
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.hasCache && c.ttl > 0 && limit <= c.cacheLimit && time.Since(c.cachedAt) < c.ttl {
-		items := cloneNews(c.cache)
-		if len(items) > limit {
-			items = items[:limit]
-		}
+	if items, ok := c.fresh(limit); ok {
 		return items, nil
 	}
 
+	c.fetchMu.Lock()
+	defer c.fetchMu.Unlock()
+
+	if items, ok := c.fresh(limit); ok {
+		return items, nil
+	}
+
+	items, err := c.fetch(ctx, limit)
+	if err != nil {
+		if stale, ok := c.stale(limit); ok {
+			return stale, nil
+		}
+		return nil, err
+	}
+
+	c.store(items, limit)
+	return items, nil
+}
+
+func (c *ContentClient) fresh(limit int) ([]NewsItem, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.hasCache || c.ttl <= 0 || limit > c.cacheLimit || time.Since(c.cachedAt) >= c.ttl {
+		return nil, false
+	}
+	return truncateNews(c.cache, limit), true
+}
+
+func (c *ContentClient) stale(limit int) ([]NewsItem, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.hasCache {
+		return nil, false
+	}
+	return truncateNews(c.cache, limit), true
+}
+
+func (c *ContentClient) store(items []NewsItem, limit int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.cache = cloneNews(items)
+	c.cacheLimit = limit
+	c.cachedAt = time.Now()
+	c.hasCache = true
+}
+
+func (c *ContentClient) fetch(ctx context.Context, limit int) ([]NewsItem, error) {
 	query := url.Values{}
 	query.Set("kind", "news")
 	query.Set("limit", strconv.Itoa(limit))
@@ -86,12 +131,15 @@ func (c *ContentClient) ListNews(ctx context.Context, limit int) ([]NewsItem, er
 	if err := json.NewDecoder(response.Body).Decode(&items); err != nil {
 		return nil, fmt.Errorf("decode content news: %w", err)
 	}
-
-	c.cache = cloneNews(items)
-	c.cacheLimit = limit
-	c.cachedAt = time.Now()
-	c.hasCache = true
 	return items, nil
+}
+
+func truncateNews(items []NewsItem, limit int) []NewsItem {
+	cloned := cloneNews(items)
+	if len(cloned) > limit {
+		cloned = cloned[:limit]
+	}
+	return cloned
 }
 
 func cloneNews(items []NewsItem) []NewsItem {

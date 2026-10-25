@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -103,5 +105,79 @@ func TestContentClientRejectsNonOKResponse(t *testing.T) {
 	client := NewContentClient(server.URL)
 	if _, err := client.ListNews(context.Background(), 10); err == nil {
 		t.Fatal("expected an error for a 500 response")
+	}
+}
+
+func TestContentClientServesStaleCacheWhenContentFails(t *testing.T) {
+	t.Parallel()
+
+	var healthy atomic.Bool
+	healthy.Store(true)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if !healthy.Load() {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"news_id":      "news-1",
+			"title":        "Кэшированная новость",
+			"published_at": "2026-10-20T10:00:00Z",
+		}})
+	}))
+	defer server.Close()
+
+	client := NewContentClient(server.URL)
+	client.ttl = time.Minute
+	if _, err := client.ListNews(context.Background(), 10); err != nil {
+		t.Fatalf("first list news: %v", err)
+	}
+
+	client.mu.Lock()
+	client.cachedAt = time.Now().Add(-2 * time.Minute)
+	client.mu.Unlock()
+	healthy.Store(false)
+
+	items, err := client.ListNews(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("stale list news: %v", err)
+	}
+	if len(items) != 1 || items[0].NewsID != "news-1" {
+		t.Fatalf("unexpected stale items: %+v", items)
+	}
+}
+
+func TestContentClientFetchesOnceForConcurrentCallers(t *testing.T) {
+	t.Parallel()
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		time.Sleep(20 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"news_id": "news-1",
+			"title":   "Новость",
+		}})
+	}))
+	defer server.Close()
+
+	client := NewContentClient(server.URL)
+	client.ttl = time.Minute
+
+	var wait sync.WaitGroup
+	for index := 0; index < 5; index++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			if _, err := client.ListNews(context.Background(), 10); err != nil {
+				t.Errorf("list news: %v", err)
+			}
+		}()
+	}
+	wait.Wait()
+
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("content service calls = %d, want 1", got)
 	}
 }
