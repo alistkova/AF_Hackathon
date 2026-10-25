@@ -17,6 +17,7 @@ x-insight-env: &insight-env
   INSIGHT_ADDR: ":8083"
   INSIGHT_DATABASE_URL: postgres://insight_svc:insight@postgres:5432/insight_db?sslmode=disable
   COMPANY_URL: http://company:8081
+  CONTENT_URL: http://content:8082
   AGENT_URL: http://agent:8090
   ANALYZER_MODE: agent
   AGENT_TIMEOUT: ${AGENT_TIMEOUT:-120s}
@@ -163,6 +164,10 @@ services:
     environment: *insight-env
     depends_on:
       postgres:
+        condition: service_healthy
+      company:
+        condition: service_healthy
+      content:
         condition: service_healthy
       agent:
         condition: service_healthy

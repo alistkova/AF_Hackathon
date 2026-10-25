@@ -224,6 +224,12 @@ PDF text extraction uses `pdftotext` from poppler-utils, which the content image
 
 RAG chunks are stored by the content service as well: `POST /api/v1/rag/chunks` upserts embedded chunks, `POST /api/v1/rag/chunks/search` and `POST /api/v1/rag/chunks/list` query them by metadata, `GET /api/v1/rag/chunks/count` counts them and `DELETE /api/v1/rag/chunks` clears the table. The agent uses these endpoints and never opens `content_db`.
 
+## Feed API
+
+`GET /api/v1/feed?company_id=magnit` returns the company feed. Insight loads the profile from the company service, loads recent news from `GET /api/v1/news?kind=news`, and ranks items by company name, industry, region and recency. Every item carries `relevance` and human-readable `reasons`, so the web client can explain why the event is in the feed. The feed accepts `limit` (default 30, max 50) and `offset`; the response contains `items` and `total`.
+
+Insight never reads `content_db`. The content service stays the source of truth for news, and the feed is ranked in memory per request. If nothing matches the company profile, the newest news items are returned as `Общая повестка`.
+
 ## SSE contract
 
 Start a job:
@@ -267,6 +273,7 @@ scripts/            dev, demo, migrate, seed, bootstrap-users, smoke, gen
 - M1 complete: identity with sessions, per-user company access enforced in the gateway, CSV import of companies, people and payments, company profiles and relations.
 - SSE job flow works end to end with the Python stub agent.
 - Content owns news and PDF documents: ingestion with deduplication, chunking, full-text search and raw file storage.
+- The personal feed is ranked from content news by company name, industry, region and recency.
 - The ingestion worker is still a no-op; documents arrive through the API and the seed command.
 - Insight jobs are in-memory for now; `analysis_jobs`/`analysis_events` tables are reserved for durable persistence.
 - Identity is implemented: register, login, logout, `/me`, and per-user company access with admin-only grants.

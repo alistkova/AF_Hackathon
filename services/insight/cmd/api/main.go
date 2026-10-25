@@ -52,7 +52,8 @@ func main() {
 
 	jobs := insight.NewManager(analyzer, logger)
 	companyClient := insight.NewCompanyClient(config.String("COMPANY_URL", "http://localhost:8081"))
-	handler := insight.NewHandler(jobs, companyClient)
+	contentClient := insight.NewContentClient(config.String("CONTENT_URL", "http://localhost:8082"))
+	handler := insight.NewHandler(jobs, companyClient, contentClient, logger)
 
 	router := gin.New()
 	router.Use(gin.Recovery(), obs.RequestID())

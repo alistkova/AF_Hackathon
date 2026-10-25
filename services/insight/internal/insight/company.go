@@ -3,11 +3,14 @@ package insight
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 )
+
+var ErrCompanyNotFound = errors.New("company not found")
 
 type CompanyClient struct {
 	baseURL string
@@ -32,7 +35,11 @@ func (c *CompanyClient) Get(ctx context.Context, id string) (Company, error) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		return Company{}, ErrCompanyNotFound
+	default:
 		return Company{}, fmt.Errorf("company service returned %d", resp.StatusCode)
 	}
 

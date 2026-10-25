@@ -14,15 +14,44 @@ paths:
   /api/v1/feed:
     get:
       operationId: getFeed
+      description: |
+        Ranked company feed built from news owned by the content service. Items are ordered
+        by relevance and then by publication date. Relevance combines company name, industry,
+        region and recency signals.
       parameters:
         - name: company_id
           in: query
           required: true
           schema:
             type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 30
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
       responses:
         "200":
           description: Ranked feed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedResponse"
+        "400":
+          description: company_id is missing or pagination is invalid
+        "404":
+          description: Company not found
+        "502":
+          description: Company or content service is unavailable
   /api/v1/insights/jobs:
     post:
       operationId: createInsightJob
@@ -57,3 +86,53 @@ paths:
             text/event-stream:
               schema:
                 type: string
+components:
+  schemas:
+    FeedItem:
+      type: object
+      required:
+        - event_id
+        - company_id
+        - title
+        - summary
+        - source
+        - url
+        - published_at
+        - relevance
+        - reasons
+      properties:
+        event_id:
+          type: string
+        company_id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        source:
+          type: string
+        url:
+          type: string
+          format: uri
+        published_at:
+          type: string
+          format: date-time
+        relevance:
+          type: number
+          minimum: 0
+          maximum: 1
+        reasons:
+          type: array
+          items:
+            type: string
+    FeedResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeedItem"
+        total:
+          type: integer
+          minimum: 0

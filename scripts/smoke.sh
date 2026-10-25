@@ -97,7 +97,17 @@ if [[ "$status" != "401" ]]; then
 fi
 
 feed="$(curl -fsS -b "$CLIENT_JAR" "$BASE_URL/api/v1/feed?company_id=$company_id")"
-python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin).get("items"), list)' <<<"$feed"
+python3 -c 'import json,sys
+payload = json.load(sys.stdin)
+items = payload["items"]
+assert isinstance(payload.get("total"), int), payload
+assert items, "feed is empty; seed content news first"
+for item in items:
+    assert isinstance(item.get("relevance"), (int, float)), item
+    assert isinstance(item.get("reasons"), list), item
+    assert item.get("source"), item
+    assert item.get("url"), item
+' <<<"$feed"
 
 if [[ -n "$forbidden" ]]; then
   status="$(curl -sS -o /dev/null -w '%{http_code}' -b "$CLIENT_JAR" "$BASE_URL/api/v1/feed?company_id=$forbidden")"

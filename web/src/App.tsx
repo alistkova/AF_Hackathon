@@ -92,8 +92,8 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
           <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs leading-5 text-slate-500 shadow-sm">
             <p className="font-semibold text-slate-700">Как это работает</p>
             <p className="mt-2">
-              Лента показывает события из кэша. Разбор запускает агента отдельно, прогресс приходит
-              по SSE.
+              Лента строится из новостей content-сервиса и ранжируется по профилю компании.
+              Разбор запускает агента отдельно, прогресс приходит по SSE.
             </p>
           </div>
         </aside>
@@ -102,7 +102,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
           {companyId ? (
             <>
               <CompanyProfile companyId={companyId} />
-              <Feed companyId={companyId} />
+              <Feed key={companyId} companyId={companyId} />
             </>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">

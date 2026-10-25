@@ -47,7 +47,9 @@ export const api = {
   companies: () => request<{ items: Company[] }>("/api/v1/companies"),
   company: (id: string) => request<Company>(`/api/v1/companies/${id}`),
   feed: (companyId: string) =>
-    request<{ items: FeedItem[] }>(`/api/v1/feed?company_id=${encodeURIComponent(companyId)}`),
+    request<{ items: FeedItem[]; total: number }>(
+      `/api/v1/feed?company_id=${encodeURIComponent(companyId)}`,
+    ),
   createJob: (companyId: string, event: FeedItem) =>
     request<InsightJob>("/api/v1/insights/jobs", {
       method: "POST",

@@ -21,6 +21,7 @@ export function Feed({ companyId }: Props) {
     queryKey: ["feed", companyId],
     queryFn: () => api.feed(companyId),
     enabled: Boolean(companyId),
+    staleTime: 30_000,
   });
 
   useEffect(() => {
@@ -97,9 +98,19 @@ export function Feed({ companyId }: Props) {
             Влияние новости на компанию, позиция банка и вывод AI
           </p>
         </div>
-        <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-500 ring-1 ring-slate-200">
-          {feed.data?.items.length ?? 0} событий
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => feed.refetch()}
+            disabled={feed.isFetching}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+          >
+            {feed.isFetching ? "Обновляем…" : "Обновить"}
+          </button>
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-500 ring-1 ring-slate-200">
+            {feed.data?.items.length ?? 0} событий
+          </span>
+        </div>
       </div>
 
       {feed.isLoading && (
@@ -111,13 +122,13 @@ export function Feed({ companyId }: Props) {
 
       {feed.isError && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          Лента недоступна. Проверьте insight-service.
+          Лента недоступна. Проверьте insight-service и content-service.
         </div>
       )}
 
       {feed.data?.items.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-          Для этой компании пока нет событий.
+          В content-сервисе пока нет новостей. Загрузите их через seed или API документов.
         </div>
       )}
 
@@ -134,12 +145,28 @@ export function Feed({ companyId }: Props) {
                 {item.source}
               </span>
               <span>{formatDate(item.published_at)}</span>
+              <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
+                релевантность {Math.round(item.relevance * 100)}%
+              </span>
               <span className="text-slate-300">·</span>
               <span className="font-mono text-[11px]">{item.event_id}</span>
             </div>
 
             <h3 className="mt-3 text-lg font-semibold leading-7 text-slate-950">{item.title}</h3>
             <p className="mt-2 text-sm leading-6 text-slate-600">{item.summary}</p>
+
+            {item.reasons.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {item.reasons.map((reason) => (
+                  <span
+                    key={reason}
+                    className="rounded-full bg-slate-50 px-2 py-1 text-[11px] text-slate-500 ring-1 ring-slate-200"
+                  >
+                    {reason}
+                  </span>
+                ))}
+              </div>
+            )}
 
             <div className="mt-4 flex items-center gap-3">
               <button

@@ -193,6 +193,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * @description Ranked company feed built from content-service news. Items are ordered by
+         *     relevance and then by publication date.
+         */
         get: operations["getFeed"];
         put?: never;
         post?: never;
@@ -334,8 +338,13 @@ export interface components {
             company_id: string;
             title: string;
             summary: string;
+            source: string;
+            /** Format: uri */
+            url: string;
             /** Format: date-time */
             published_at: string;
+            relevance: number;
+            reasons: string[];
         };
         Source: {
             source_id: string;
@@ -435,6 +444,8 @@ export interface components {
     };
     parameters: {
         CompanyId: string;
+        Limit: number;
+        Offset: number;
         PathCompanyId: string;
         JobId: string;
     };
@@ -846,6 +857,8 @@ export interface operations {
         parameters: {
             query: {
                 company_id: components["parameters"]["CompanyId"];
+                limit?: components["parameters"]["Limit"];
+                offset?: components["parameters"]["Offset"];
             };
             header?: never;
             path?: never;
@@ -861,10 +874,11 @@ export interface operations {
                 content: {
                     "application/json": {
                         items: components["schemas"]["FeedItem"][];
+                        total: number;
                     };
                 };
             };
-            /** @description company_id is missing */
+            /** @description company_id is missing or pagination is invalid */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -874,6 +888,13 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /** @description Company not found or not accessible to the user */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Company or content service is unavailable */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

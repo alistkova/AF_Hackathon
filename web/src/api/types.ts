@@ -22,6 +22,8 @@ export type FeedItem = {
   source: string;
   url: string;
   published_at: string;
+  relevance: number;
+  reasons: string[];
 };
 
 export type Source = {

@@ -10,6 +10,8 @@ const event: FeedItem = {
   source: "Ведомости",
   url: "https://example.com/news-001",
   published_at: "2026-10-18T09:00:00Z",
+  relevance: 0.86,
+  reasons: ["Упоминание компании", "Отрасль: Торговля"],
 };
 
 afterEach(() => {

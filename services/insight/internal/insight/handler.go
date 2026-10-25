@@ -1,18 +1,38 @@
 package insight
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/alfa-hack/alfa-hack/internal/platform/httpx"
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	defaultFeedLimit = 30
+	maxFeedLimit     = 50
+	feedNewsWindow   = 200
+)
+
+type companyProvider interface {
+	Get(ctx context.Context, id string) (Company, error)
+}
+
+type newsProvider interface {
+	ListNews(ctx context.Context, limit int) ([]NewsItem, error)
+}
+
 type Handler struct {
 	jobs    *Manager
-	company *CompanyClient
+	company companyProvider
+	news    newsProvider
+	logger  *slog.Logger
 }
 
 type CreateJobRequest struct {
@@ -21,54 +41,80 @@ type CreateJobRequest struct {
 	Evidence  []Evidence   `json:"evidence"`
 }
 
-func NewHandler(jobs *Manager, company *CompanyClient) *Handler {
-	return &Handler{jobs: jobs, company: company}
+func NewHandler(jobs *Manager, company companyProvider, news newsProvider, logger *slog.Logger) *Handler {
+	return &Handler{jobs: jobs, company: company, news: news, logger: logger}
 }
 
 func (h *Handler) Feed(c *gin.Context) {
-	companyID := c.Query("company_id")
-	items := []FeedItem{
-		{
-			EventID:     "news-001",
-			CompanyID:   "magnit",
-			Title:       "Магнит увеличивает инвестиции в логистику",
-			Summary:     "Ритейлер объявил о расширении распределительных центров в Южном федеральном округе.",
-			Source:      "Ведомости",
-			URL:         "https://example.com/news/magnit-logistics",
-			PublishedAt: "2026-10-18T09:00:00Z",
-		},
-		{
-			EventID:     "news-002",
-			CompanyID:   "severstal",
-			Title:       "Северсталь ожидает роста спроса на плоский прокат",
-			Summary:     "Компания видит восстановление спроса со стороны машиностроения и строительства.",
-			Source:      "Коммерсантъ",
-			URL:         "https://example.com/news/severstal-demand",
-			PublishedAt: "2026-10-17T12:30:00Z",
-		},
-		{
-			EventID:     "news-003",
-			CompanyID:   "yandex",
-			Title:       "Яндекс расширяет облачные сервисы для корпоративных клиентов",
-			Summary:     "Новые продукты ориентированы на компании среднего и крупного бизнеса.",
-			Source:      "РБК",
-			URL:         "https://example.com/news/yandex-cloud",
-			PublishedAt: "2026-10-16T15:10:00Z",
-		},
-	}
-
+	companyID := strings.TrimSpace(c.Query("company_id"))
 	if companyID == "" {
-		c.JSON(http.StatusOK, gin.H{"items": items})
+		httpx.Error(c, http.StatusBadRequest, "company_required", "Не указана компания")
+		return
+	}
+	limit, offset, ok := feedPagination(c)
+	if !ok {
 		return
 	}
 
-	filtered := make([]FeedItem, 0, len(items))
-	for _, item := range items {
-		if item.CompanyID == companyID {
-			filtered = append(filtered, item)
-		}
+	company, err := h.company.Get(c.Request.Context(), companyID)
+	if errors.Is(err, ErrCompanyNotFound) {
+		httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": filtered})
+	if err != nil {
+		h.logger.Error("load feed company", "error", err, "company_id", companyID, "request_id", c.GetString("request_id"))
+		httpx.Error(c, http.StatusBadGateway, "company_unavailable", "Не удалось получить профиль компании")
+		return
+	}
+
+	news, err := h.news.ListNews(c.Request.Context(), feedNewsWindow)
+	if err != nil {
+		h.logger.Error("load feed news", "error", err, "company_id", companyID, "request_id", c.GetString("request_id"))
+		httpx.Error(c, http.StatusBadGateway, "content_unavailable", "Не удалось загрузить ленту новостей")
+		return
+	}
+
+	items := RankFeed(company, news, time.Now().UTC())
+	total := len(items)
+	if offset > total {
+		offset = total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items": items[offset:end],
+		"total": total,
+	})
+}
+
+func feedPagination(c *gin.Context) (int, int, bool) {
+	limit := defaultFeedLimit
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			httpx.Error(c, http.StatusBadRequest, "invalid_request", "Параметр limit должен быть положительным числом")
+			return 0, 0, false
+		}
+		if parsed > maxFeedLimit {
+			parsed = maxFeedLimit
+		}
+		limit = parsed
+	}
+
+	offset := 0
+	if raw := strings.TrimSpace(c.Query("offset")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			httpx.Error(c, http.StatusBadRequest, "invalid_request", "Параметр offset должен быть неотрицательным числом")
+			return 0, 0, false
+		}
+		offset = parsed
+	}
+
+	return limit, offset, true
 }
 
 func (h *Handler) CreateJob(c *gin.Context) {

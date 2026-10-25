@@ -25,6 +25,10 @@ Rules:
 
 `services/agent` is stateless. Insight owns retrieval, persistence and retries. The agent receives evidence with `source_id` values and returns `sources` containing only those IDs.
 
+## Feed
+
+`GET /api/v1/feed?company_id=...` is assembled by insight from content-service news. Each item carries a `relevance` score from 0 to 1 and `reasons` such as `Упоминание компании` or `Отрасль: Торговля`. Ranking uses the company name, industry mapped to news `target_sectors`, region and publication date. Insight does not read `content_db`; it calls the public news API.
+
 ## News API format
 
 `GET /api/v1/news` returns the array shape requested by the AI team:
