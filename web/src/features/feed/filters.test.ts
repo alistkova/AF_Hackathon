@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   activeFeedFilterCount,
   createDefaultFeedFilters,
+  feedFiltersEqual,
+  filterFacetOptions,
   hasActiveFeedFilters,
   hasInvalidFeedDateRange,
   toApiFeedFilters,
@@ -58,5 +60,29 @@ describe("feed filters", () => {
     };
 
     expect(activeFeedFilterCount(filters)).toBe(5);
+  });
+
+  it("detects pending changes against the applied filters", () => {
+    const applied = createDefaultFeedFilters();
+    const draft = { ...applied, tags: ["ритейл"], sort: "date" as const };
+
+    expect(feedFiltersEqual(applied, { ...applied })).toBe(true);
+    expect(feedFiltersEqual(applied, draft)).toBe(false);
+    expect(feedFiltersEqual(draft, { ...draft })).toBe(true);
+  });
+
+  it("filters facet options but keeps selected values visible", () => {
+    const options = [
+      { value: "Ведомости", count: 3 },
+      { value: "РБК", count: 2 },
+      { value: "Коммерсантъ", count: 1 },
+    ];
+
+    expect(filterFacetOptions(options, [], "рб")).toEqual([{ value: "РБК", count: 2 }]);
+    expect(filterFacetOptions(options, ["Ведомости"], "рб")).toEqual([
+      { value: "Ведомости", count: 3 },
+      { value: "РБК", count: 2 },
+    ]);
+    expect(filterFacetOptions(options, [], "  ")).toEqual(options);
   });
 });

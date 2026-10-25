@@ -12,18 +12,14 @@ import type {
 import { formatDate } from "../../shared/format";
 import { useDebouncedValue } from "../../shared/useDebouncedValue";
 import { AnalysisPanel } from "./AnalysisPanel";
-import {
-  hasActiveFeedFilters,
-  hasInvalidFeedDateRange,
-  toApiFeedFilters,
-  type FeedFilterState,
-} from "./filters";
+import { hasActiveFeedFilters, toApiFeedFilters, type FeedFilterState } from "./filters";
 
 const feedPageSize = 30;
 
 type Props = {
   companyId: string;
   filters: FeedFilterState;
+  onQueryChange: (query: string) => void;
   onFacetsChange: (facets: FeedFacets | null) => void;
   onResetFilters: () => void;
   onToggleSource: (source: string) => void;
@@ -34,6 +30,7 @@ type Props = {
 export function Feed({
   companyId,
   filters,
+  onQueryChange,
   onFacetsChange,
   onResetFilters,
   onToggleSource,
@@ -46,10 +43,27 @@ export function Feed({
   const [insight, setInsight] = useState<Insight | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const debouncedQuery = useDebouncedValue(filters.query, 300);
-  const apiFilters = toApiFeedFilters(filters, debouncedQuery);
-  const dateRangeInvalid = hasInvalidFeedDateRange(filters);
+  const [search, setSearch] = useState(filters.query);
+  const lastCommittedQuery = useRef(filters.query);
+  const debouncedSearch = useDebouncedValue(search, 300);
+  const apiFilters = toApiFeedFilters(filters);
   const hasFilters = hasActiveFeedFilters(filters);
+
+  useEffect(() => {
+    if (debouncedSearch === lastCommittedQuery.current) {
+      return;
+    }
+    lastCommittedQuery.current = debouncedSearch;
+    onQueryChange(debouncedSearch);
+  }, [debouncedSearch, onQueryChange]);
+
+  useEffect(() => {
+    if (filters.query === lastCommittedQuery.current) {
+      return;
+    }
+    lastCommittedQuery.current = filters.query;
+    setSearch(filters.query);
+  }, [filters.query]);
 
   const feed = useInfiniteQuery({
     queryKey: ["feed", companyId, apiFilters],
@@ -59,7 +73,7 @@ export function Feed({
       const loaded = allPages.reduce((total, page) => total + page.items.length, 0);
       return loaded < lastPage.total ? loaded : undefined;
     },
-    enabled: Boolean(companyId) && !dateRangeInvalid,
+    enabled: Boolean(companyId),
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
@@ -141,14 +155,22 @@ export function Feed({
 
   return (
     <section className="mt-6 space-y-4">
-      <div className="flex items-end justify-between gap-4">
-        <div>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
           <h2 className="text-xl font-bold tracking-tight text-slate-950">Лента событий</h2>
           <p className="mt-1 text-sm text-slate-500">
             Влияние новости на компанию, позиция банка и вывод AI
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Поиск по ленте"
+            aria-label="Поиск по ленте"
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#ef3124] sm:w-56"
+          />
           <button
             type="button"
             onClick={() => feed.refetch()}
@@ -163,20 +185,14 @@ export function Feed({
         </div>
       </div>
 
-      {dateRangeInvalid && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          Начало периода не может быть позже окончания.
-        </div>
-      )}
-
-      {feed.isLoading && !dateRangeInvalid && (
+      {feed.isLoading && (
         <div className="space-y-3">
           <div className="h-32 animate-pulse rounded-2xl bg-white/70" />
           <div className="h-32 animate-pulse rounded-2xl bg-white/70" />
         </div>
       )}
 
-      {feed.isError && !dateRangeInvalid && (
+      {feed.isError && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
           {feed.error instanceof Error
             ? feed.error.message
@@ -184,7 +200,7 @@ export function Feed({
         </div>
       )}
 
-      {!dateRangeInvalid && !feed.isLoading && items.length === 0 && (
+      {!feed.isLoading && items.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
           {hasFilters ? (
             <>
@@ -203,28 +219,29 @@ export function Feed({
         </div>
       )}
 
-      {!dateRangeInvalid &&
-        items.map((item) => {
+      {items.map((item) => {
         const isActive = item.event_id === activeEventId;
         const isBusy = isActive && !insight && !error;
+        const source = item.source;
         return (
           <article
             key={item.event_id}
             className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
           >
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              {item.source ? (
+              {source ? (
                 <button
                   type="button"
-                  onClick={() => onToggleSource(item.source)}
+                  onClick={() => onToggleSource(source)}
                   title="Фильтровать по источнику"
+                  aria-pressed={filters.sources.includes(source)}
                   className={`rounded-full px-2.5 py-1 font-medium transition ${
-                    filters.sources.includes(item.source)
+                    filters.sources.includes(source)
                       ? "bg-slate-900 text-white"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
                 >
-                  {item.source}
+                  {source}
                 </button>
               ) : (
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-500">
@@ -326,7 +343,7 @@ export function Feed({
         );
       })}
 
-      {!dateRangeInvalid && feed.hasNextPage && (
+      {feed.hasNextPage && (
         <div className="flex justify-center pt-2">
           <button
             type="button"
