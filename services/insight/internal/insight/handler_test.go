@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,8 +78,8 @@ func TestFeedReturnsRankedCompanyNews(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload.Total != 1 || len(payload.Items) != 1 {
-		t.Fatalf("got %d items (total %d), want 1", len(payload.Items), payload.Total)
+	if payload.Total != 2 || len(payload.Items) != 2 {
+		t.Fatalf("got %d items (total %d), want 2", len(payload.Items), payload.Total)
 	}
 
 	item := payload.Items[0]
@@ -90,6 +91,9 @@ func TestFeedReturnsRankedCompanyNews(t *testing.T) {
 	}
 	if len(item.Reasons) == 0 || item.Relevance <= 0 {
 		t.Fatalf("item has no ranking metadata: %+v", item)
+	}
+	if general := payload.Items[1]; general.EventID != "news-macro" || general.Relevance != genericFeedRelevance {
+		t.Fatalf("general news is not ranked last: %+v", general)
 	}
 }
 
@@ -339,6 +343,33 @@ func TestFeedErrors(t *testing.T) {
 				t.Fatalf("code is %q, want %q", payload.Code, testCase.wantCode)
 			}
 		})
+	}
+}
+
+func TestCreateJobReturnsNotFoundForUnknownCompany(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	handler := NewHandler(nil, failingCompany(ErrCompanyNotFound), staticNews(nil), logger)
+	router := gin.New()
+	router.POST("/api/v1/insights/jobs", handler.CreateJob)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/insights/jobs", strings.NewReader(`{"company_id":"unknown","event":{"title":"Событие"}}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status is %d, want 404: %s", response.Code, response.Body.String())
+	}
+
+	var payload struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if payload.Code != "company_not_found" {
+		t.Fatalf("code is %q, want company_not_found", payload.Code)
 	}
 }
 

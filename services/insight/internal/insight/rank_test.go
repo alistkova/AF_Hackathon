@@ -36,7 +36,7 @@ func TestProfileForMapsIndustriesToNewsSectors(t *testing.T) {
 	}
 }
 
-func TestRankFeedPutsCompanyNewsFirstAndDropsNoise(t *testing.T) {
+func TestRankFeedPutsCompanyNewsFirstAndKeepsGeneralNews(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
@@ -69,8 +69,8 @@ func TestRankFeedPutsCompanyNewsFirstAndDropsNoise(t *testing.T) {
 	}
 
 	items := RankFeed(company, news, now)
-	if len(items) != 1 {
-		t.Fatalf("got %d feed items, want 1: %+v", len(items), items)
+	if len(items) != 3 {
+		t.Fatalf("got %d feed items, want 3: %+v", len(items), items)
 	}
 
 	item := items[0]
@@ -88,6 +88,18 @@ func TestRankFeedPutsCompanyNewsFirstAndDropsNoise(t *testing.T) {
 	}
 	if !containsString(item.Reasons, "Отрасль: Торговля") {
 		t.Fatalf("reasons %v do not mention the sector match", item.Reasons)
+	}
+
+	if items[1].EventID != "news-macro" || items[2].EventID != "news-china" {
+		t.Fatalf("general news is not ordered by date: %q, %q", items[1].EventID, items[2].EventID)
+	}
+	for _, general := range items[1:] {
+		if general.Relevance != genericFeedRelevance {
+			t.Fatalf("general item %q has relevance %v, want %v", general.EventID, general.Relevance, genericFeedRelevance)
+		}
+		if !containsString(general.Reasons, genericFeedReason) {
+			t.Fatalf("general item %q reasons are %v", general.EventID, general.Reasons)
+		}
 	}
 }
 
@@ -113,7 +125,7 @@ func TestRankFeedIncludesSectorOnlyNews(t *testing.T) {
 	}
 }
 
-func TestRankFeedFallsBackToLatestGeneralNews(t *testing.T) {
+func TestRankFeedKeepsGeneralNewsOrderedByDate(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC)
@@ -137,16 +149,16 @@ func TestRankFeedFallsBackToLatestGeneralNews(t *testing.T) {
 
 	items := RankFeed(company, news, now)
 	if len(items) != 2 {
-		t.Fatalf("got %d fallback items, want 2", len(items))
+		t.Fatalf("got %d general items, want 2", len(items))
 	}
 	if items[0].EventID != "news-new" {
-		t.Fatalf("fallback is not ordered by date: first is %q", items[0].EventID)
+		t.Fatalf("general news is not ordered by date: first is %q", items[0].EventID)
 	}
-	if items[0].Relevance != 0.1 {
-		t.Fatalf("fallback relevance is %v, want 0.1", items[0].Relevance)
+	if items[0].Relevance != genericFeedRelevance {
+		t.Fatalf("general relevance is %v, want %v", items[0].Relevance, genericFeedRelevance)
 	}
-	if !containsString(items[0].Reasons, "Общая повестка") {
-		t.Fatalf("fallback reasons are %v", items[0].Reasons)
+	if !containsString(items[0].Reasons, genericFeedReason) {
+		t.Fatalf("general reasons are %v", items[0].Reasons)
 	}
 }
 

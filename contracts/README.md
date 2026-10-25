@@ -27,7 +27,7 @@ Rules:
 
 ## Feed
 
-`GET /api/v1/feed?company_id=...` is assembled by insight from content-service news. Each item carries a `relevance` score from 0 to 1 and `reasons` such as `Упоминание компании` or `Отрасль: Торговля`. Ranking uses the company name, industry mapped to news `target_sectors`, region and publication date. Insight does not read `content_db`; it calls the public news API.
+`GET /api/v1/feed?company_id=...` is assembled by insight from content-service news. Each item carries a `relevance` score from 0 to 1 and `reasons` such as `Упоминание компании` or `Отрасль: Торговля`. Ranking uses the company name, industry mapped to news `target_sectors`, region and publication date. News without a profile match stays in the feed after the ranked items with `relevance` `0.1` and the reason `Общая повестка`, so pagination and filters cover the full window. Insight does not read `content_db`; it calls the public news API and serves the last cached list if content is temporarily unavailable.
 
 The feed can be filtered by repeatable `source`, `tag` and `sector` parameters, by `q`, and by `from` / `to` dates. Filters are applied after ranking. `sort` accepts `relevance` (default) or `date`. The response includes `facets` with unfiltered counts for sources, tags and sectors. Pagination uses `limit` and `offset`.
 

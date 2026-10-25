@@ -230,7 +230,7 @@ RAG chunks are stored by the content service as well: `POST /api/v1/rag/chunks` 
 
 Filters are applied after ranking: `source`, `tag` and `sector` are repeatable (or comma-separated), `q` searches title, summary, source, tags and sectors, and `from` / `to` accept `2006-01-02` or RFC3339. `sort` is `relevance` (default) or `date`. Facets contain unfiltered source, tag and sector counts so the client can keep filter options stable. `total` is the filtered count.
 
-Insight never reads `content_db`. The content service stays the source of truth for news, and the feed is ranked in memory per request. The news list is cached in insight for 30 seconds so filter changes do not refetch the content service every time. Filters currently cover the latest 200 news items fetched from content; if that window becomes a limitation, the next step is pushing the same filters into the content query. If nothing matches the company profile, the newest news items are returned as `Общая повестка`.
+Insight never reads `content_db`. The content service stays the source of truth for news, and the feed is ranked in memory per request. The news list is cached in insight for 30 seconds so filter changes do not refetch the content service every time; when the content service is unavailable the last cached list is served. Filters currently cover the latest 200 news items fetched from content; if that window becomes a limitation, the next step is pushing the same filters into the content query. News that matches the company profile is ranked first; everything else is kept after it with `relevance` `0.1` and the reason `Общая повестка`, so pagination and filters always cover the whole window. If there is no news at all, the feed is empty.
 
 ## SSE contract
 

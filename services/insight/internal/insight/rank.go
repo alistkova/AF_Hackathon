@@ -10,9 +10,10 @@ import (
 )
 
 const (
-	feedSummaryLimit = 240
-	fallbackFeedSize = 5
-	feedScoreScale   = 14
+	feedSummaryLimit     = 240
+	feedScoreScale       = 14
+	genericFeedRelevance = 0.1
+	genericFeedReason    = "Общая повестка"
 )
 
 const (
@@ -165,20 +166,19 @@ func RankFeed(company Company, news []NewsItem, now time.Time) []FeedItem {
 		}
 
 		score, reasons := scoreNews(company, item, now)
+		relevance := normalizeRelevance(score)
 		if score < 1 || !hasRelevanceReason(reasons) {
-			continue
+			score = 0
+			relevance = genericFeedRelevance
+			reasons = []string{genericFeedReason}
 		}
 
 		ranked = append(ranked, rankedFeedItem{
-			item:      toFeedItem(company, item, normalizeRelevance(score), reasons),
+			item:      toFeedItem(company, item, relevance, reasons),
 			score:     score,
 			published: item.PublishedAt,
 			eventID:   eventID,
 		})
-	}
-
-	if len(ranked) == 0 {
-		return fallbackFeed(company, news)
 	}
 
 	sort.SliceStable(ranked, func(i, j int) bool {
@@ -194,30 +194,6 @@ func RankFeed(company Company, news []NewsItem, now time.Time) []FeedItem {
 	items := make([]FeedItem, 0, len(ranked))
 	for _, entry := range ranked {
 		items = append(items, entry.item)
-	}
-	return items
-}
-
-func fallbackFeed(company Company, news []NewsItem) []FeedItem {
-	sorted := make([]NewsItem, 0, len(news))
-	for _, item := range news {
-		if feedEventID(item) != "" {
-			sorted = append(sorted, item)
-		}
-	}
-	sort.SliceStable(sorted, func(i, j int) bool {
-		if !sorted[i].PublishedAt.Equal(sorted[j].PublishedAt) {
-			return sorted[i].PublishedAt.After(sorted[j].PublishedAt)
-		}
-		return feedEventID(sorted[i]) < feedEventID(sorted[j])
-	})
-	if len(sorted) > fallbackFeedSize {
-		sorted = sorted[:fallbackFeedSize]
-	}
-
-	items := make([]FeedItem, 0, len(sorted))
-	for _, item := range sorted {
-		items = append(items, toFeedItem(company, item, 0.1, []string{"Общая повестка"}))
 	}
 	return items
 }
