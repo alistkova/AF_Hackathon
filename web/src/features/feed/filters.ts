@@ -48,9 +48,28 @@ export function hasInvalidFeedDateRange(filters: FeedFilterState): boolean {
 }
 
 export function toggleValue(values: string[], value: string): string[] {
-  return values.includes(value)
-    ? values.filter((item) => item !== value)
+  return isFilterSelected(values, value)
+    ? values.filter((item) => !filterValuesEqual(item, value))
     : [...values, value];
+}
+
+export function normalizeFilterValue(value: string): string {
+  return value.trim().toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
+}
+
+export function filterValuesEqual(left: string, right: string): boolean {
+  return normalizeFilterValue(left) === normalizeFilterValue(right);
+}
+
+export function isFilterSelected(values: string[], value: string): boolean {
+  return values.some((item) => filterValuesEqual(item, value));
+}
+
+function sameFilterValues(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((item) => isFilterSelected(right, item))
+  );
 }
 
 export function feedFiltersEqual(left: FeedFilterState, right: FeedFilterState): boolean {
@@ -59,9 +78,9 @@ export function feedFiltersEqual(left: FeedFilterState, right: FeedFilterState):
     left.from === right.from &&
     left.to === right.to &&
     left.sort === right.sort &&
-    left.sources.join("\u0000") === right.sources.join("\u0000") &&
-    left.tags.join("\u0000") === right.tags.join("\u0000") &&
-    left.sectors.join("\u0000") === right.sectors.join("\u0000")
+    sameFilterValues(left.sources, right.sources) &&
+    sameFilterValues(left.tags, right.tags) &&
+    sameFilterValues(left.sectors, right.sectors)
   );
 }
 
@@ -70,10 +89,11 @@ export function filterFacetOptions(
   selected: string[],
   query: string,
 ): FeedFacet[] {
-  const term = query.trim().toLowerCase();
+  const term = normalizeFilterValue(query);
   if (!term) return options;
   return options.filter(
-    (option) => option.value.toLowerCase().includes(term) || selected.includes(option.value),
+    (option) =>
+      normalizeFilterValue(option.value).includes(term) || isFilterSelected(selected, option.value),
   );
 }
 
