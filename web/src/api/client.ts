@@ -1,4 +1,15 @@
-import type { Company, FeedFacets, FeedFilters, FeedItem, InsightJob, User } from "./types";
+import type {
+  Company,
+  CompanyCreateInput,
+  CompanyMember,
+  FeedFacets,
+  FeedFilters,
+  FeedItem,
+  InsightJob,
+  Membership,
+  ProfileUpdate,
+  User,
+} from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -38,6 +49,16 @@ async function requestVoid(path: string, init?: RequestInit): Promise<void> {
 
 export const api = {
   me: () => request<User>("/api/v1/me"),
+  updateProfile: (input: ProfileUpdate) =>
+    request<User>("/api/v1/me", {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    requestVoid("/api/v1/me/password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
   login: (email: string, password: string) =>
     request<{ token: string; user: User }>("/api/v1/auth/login", {
       method: "POST",
@@ -46,6 +67,26 @@ export const api = {
   logout: () => requestVoid("/api/v1/auth/logout", { method: "POST" }),
   companies: () => request<{ items: Company[] }>("/api/v1/companies"),
   company: (id: string) => request<Company>(`/api/v1/companies/${id}`),
+  createCompany: (input: CompanyCreateInput) =>
+    request<Company>("/api/v1/companies", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateCompany: (id: string, input: CompanyCreateInput) =>
+    request<Company>(`/api/v1/companies/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  myMemberships: () => request<{ items: Membership[] }>("/api/v1/me/memberships"),
+  companyMembers: (id: string) =>
+    request<{ items: CompanyMember[] }>(`/api/v1/companies/${id}/members`),
+  addCompanyMember: (id: string, email: string) =>
+    request<CompanyMember>(`/api/v1/companies/${id}/members`, {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  removeCompanyMember: (id: string, userId: string) =>
+    requestVoid(`/api/v1/companies/${id}/members/${userId}`, { method: "DELETE" }),
   feed: (companyId: string, filters: FeedFilters = {}, limit = 30, offset = 0) => {
     const params = new URLSearchParams({
       company_id: companyId,

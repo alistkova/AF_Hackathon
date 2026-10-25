@@ -6,3 +6,15 @@ export function formatDate(value: string): string {
     minute: "2-digit",
   }).format(new Date(value));
 }
+
+export function formatRevenue(value: string | undefined): string {
+  if (!value) return "";
+  const numeric = Number(value.replace(/\s/g, "").replace(",", "."));
+  if (!Number.isFinite(numeric)) return value;
+  return new Intl.NumberFormat("ru-RU", {
+    style: "currency",
+    currency: "RUB",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(numeric);
+}
