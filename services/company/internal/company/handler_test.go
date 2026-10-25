@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,14 @@ type fakeStore struct {
 	peopleErr  error
 	relations  []CompanyRelation
 	relErr     error
+	created    Company
+	createErr  error
+	createdIn  Company
+	updated    Company
+	updateErr  error
+	updatedIn  Company
+	deletedID  string
+	deleteErr  error
 }
 
 func (f *fakeStore) List(_ context.Context, ids []string) ([]Company, error) {
@@ -65,6 +74,33 @@ func (f *fakeStore) ListRelations(_ context.Context, id string) ([]CompanyRelati
 	return f.relations, f.relErr
 }
 
+func (f *fakeStore) Create(_ context.Context, item Company) (Company, error) {
+	f.createdIn = item
+	if f.createErr != nil {
+		return Company{}, f.createErr
+	}
+	if f.created.ID == "" {
+		return item, nil
+	}
+	return f.created, nil
+}
+
+func (f *fakeStore) Update(_ context.Context, item Company) (Company, error) {
+	f.updatedIn = item
+	if f.updateErr != nil {
+		return Company{}, f.updateErr
+	}
+	if f.updated.ID == "" {
+		return item, nil
+	}
+	return f.updated, nil
+}
+
+func (f *fakeStore) Delete(_ context.Context, id string) error {
+	f.deletedID = id
+	return f.deleteErr
+}
+
 func newTestRouter(store Store) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	handler := NewHandler(store, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -73,6 +109,9 @@ func newTestRouter(store Store) *gin.Engine {
 	router.GET("/api/v1/companies/:id", handler.Get)
 	router.GET("/api/v1/companies/:id/people", handler.People)
 	router.GET("/api/v1/companies/:id/relations", handler.Relations)
+	router.POST("/api/v1/companies", handler.Create)
+	router.PUT("/api/v1/companies/:id", handler.Update)
+	router.DELETE("/api/v1/companies/:id", handler.Delete)
 	return router
 }
 
@@ -301,5 +340,132 @@ func TestListCompanyRelationsError(t *testing.T) {
 
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusInternalServerError)
+	}
+}
+
+func performJSON(t *testing.T, router *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func TestCreateCompany(t *testing.T) {
+	store := &fakeStore{}
+	body := `{"name":"Ромашка","inn":"7701234567","industry":"Ритейл","region":"Москва","city":"Москва","description":"Тестовая компания","revenue":"1000000"}`
+
+	recorder := performJSON(t, newTestRouter(store), http.MethodPost, "/api/v1/companies", body)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d body %s", recorder.Code, http.StatusCreated, recorder.Body.String())
+	}
+	var created Company
+	if err := json.Unmarshal(recorder.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !strings.HasPrefix(created.ID, "cmp_") {
+		t.Fatalf("id = %q, want cmp_ prefix", created.ID)
+	}
+	if created.Name != "Ромашка" || created.INN != "7701234567" || created.Revenue != "1000000" {
+		t.Fatalf("unexpected company: %+v", created)
+	}
+	if store.createdIn.Name != "Ромашка" {
+		t.Fatalf("store got %+v", store.createdIn)
+	}
+}
+
+func TestCreateCompanyValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"missing name", `{"inn":"7701234567"}`},
+		{"short inn", `{"name":"Ромашка","inn":"123"}`},
+		{"non-numeric inn", `{"name":"Ромашка","inn":"77o1234567"}`},
+		{"non-numeric revenue", `{"name":"Ромашка","revenue":"много"}`},
+		{"malformed json", `{`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := performJSON(t, newTestRouter(&fakeStore{}), http.MethodPost, "/api/v1/companies", tc.body)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+			}
+		})
+	}
+}
+
+func TestDeleteCompany(t *testing.T) {
+	store := &fakeStore{}
+
+	recorder := performJSON(t, newTestRouter(store), http.MethodDelete, "/api/v1/companies/magnit", "")
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNoContent)
+	}
+	if store.deletedID != "magnit" {
+		t.Fatalf("deleted id = %q, want magnit", store.deletedID)
+	}
+}
+
+func TestDeleteCompanyNotFound(t *testing.T) {
+	store := &fakeStore{deleteErr: ErrNotFound}
+
+	recorder := performJSON(t, newTestRouter(store), http.MethodDelete, "/api/v1/companies/missing", "")
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
+	}
+}
+
+func TestUpdateCompany(t *testing.T) {
+	store := &fakeStore{}
+	body := `{"name":"ООО Ромашка","inn":"7701234567","industry":"Ритейл","region":"Москва","city":"Москва","description":"Обновлённая компания","revenue":"2000000"}`
+
+	recorder := performJSON(t, newTestRouter(store), http.MethodPut, "/api/v1/companies/cmp_1", body)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var updated Company
+	if err := json.Unmarshal(recorder.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if updated.Name != "ООО Ромашка" || updated.ID != "cmp_1" {
+		t.Fatalf("unexpected company: %+v", updated)
+	}
+	if store.updatedIn.ID != "cmp_1" || store.updatedIn.Revenue != "2000000" {
+		t.Fatalf("store got %+v", store.updatedIn)
+	}
+}
+
+func TestUpdateCompanyValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"missing name", `{"inn":"7701234567"}`},
+		{"short inn", `{"name":"Ромашка","inn":"123"}`},
+		{"non-numeric revenue", `{"name":"Ромашка","revenue":"много"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := performJSON(t, newTestRouter(&fakeStore{}), http.MethodPut, "/api/v1/companies/cmp_1", tc.body)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+			}
+		})
+	}
+}
+
+func TestUpdateCompanyNotFound(t *testing.T) {
+	store := &fakeStore{updateErr: ErrNotFound}
+
+	recorder := performJSON(t, newTestRouter(store), http.MethodPut, "/api/v1/companies/missing", `{"name":"Ромашка"}`)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
 	}
 }

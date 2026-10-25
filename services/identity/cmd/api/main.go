@@ -82,11 +82,20 @@ func main() {
 	protected := v1.Group("")
 	protected.Use(auth)
 	protected.GET("/me", handler.Me)
+	protected.PATCH("/me", handler.UpdateMe)
+	protected.POST("/me/password", handler.ChangePassword)
 	protected.GET("/me/companies", handler.AccessibleCompanies)
+	protected.GET("/me/memberships", handler.Memberships)
+	protected.GET("/companies/:companyId/members", handler.CompanyMembers)
+	protected.POST("/companies/:companyId/members", handler.AddCompanyMember)
+	protected.DELETE("/companies/:companyId/members/:userId", handler.RemoveCompanyMember)
 	admin := protected.Group("/access")
 	admin.Use(identity.RequireAdmin())
 	admin.POST("/grant", handler.GrantAccess)
 	admin.POST("/revoke", handler.RevokeAccess)
+
+	internal := v1.Group("/internal")
+	internal.POST("/memberships", handler.CreateMembership)
 
 	server := &http.Server{
 		Addr:              config.String("IDENTITY_ADDR", ":8086"),

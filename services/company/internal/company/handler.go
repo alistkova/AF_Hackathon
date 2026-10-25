@@ -2,6 +2,8 @@ package company
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -16,6 +18,9 @@ type Store interface {
 	GetWithPeople(ctx context.Context, id string) (CompanyDetails, error)
 	ListPeople(ctx context.Context, companyID string) ([]CompanyPerson, error)
 	ListRelations(ctx context.Context, companyID string) ([]CompanyRelation, error)
+	Create(ctx context.Context, item Company) (Company, error)
+	Update(ctx context.Context, item Company) (Company, error)
+	Delete(ctx context.Context, id string) error
 }
 
 type Handler struct {
@@ -73,6 +78,136 @@ func (h *Handler) Get(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, item)
+}
+
+func (h *Handler) Create(c *gin.Context) {
+	var req createCompanyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Error(c, http.StatusBadRequest, "invalid_request", "Некорректный запрос")
+		return
+	}
+
+	item, problem := validateCompany(req)
+	if problem != "" {
+		httpx.Error(c, http.StatusBadRequest, "invalid_company", problem)
+		return
+	}
+	item.ID = newCompanyID()
+
+	created, err := h.repo.Create(c.Request.Context(), item)
+	if err != nil {
+		h.logger.Error("create company", "error", err)
+		httpx.Error(c, http.StatusInternalServerError, "company_unavailable", "Не удалось создать компанию")
+		return
+	}
+	c.JSON(http.StatusCreated, created)
+}
+
+func (h *Handler) Update(c *gin.Context) {
+	var req createCompanyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Error(c, http.StatusBadRequest, "invalid_request", "Некорректный запрос")
+		return
+	}
+
+	item, problem := validateCompany(req)
+	if problem != "" {
+		httpx.Error(c, http.StatusBadRequest, "invalid_company", problem)
+		return
+	}
+	item.ID = c.Param("id")
+
+	updated, err := h.repo.Update(c.Request.Context(), item)
+	if IsNotFound(err) {
+		httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
+		return
+	}
+	if err != nil {
+		h.logger.Error("update company", "error", err, "company_id", c.Param("id"))
+		httpx.Error(c, http.StatusInternalServerError, "company_unavailable", "Не удалось обновить компанию")
+		return
+	}
+	c.JSON(http.StatusOK, updated)
+}
+
+type createCompanyRequest struct {
+	Name        string `json:"name"`
+	INN         string `json:"inn"`
+	Industry    string `json:"industry"`
+	Region      string `json:"region"`
+	City        string `json:"city"`
+	Description string `json:"description"`
+	Revenue     string `json:"revenue"`
+	ClientType  string `json:"client_type"`
+	OKVEDCode   string `json:"okved_code"`
+	OKVEDName   string `json:"okved_name"`
+}
+
+func validateCompany(req createCompanyRequest) (Company, string) {
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return Company{}, "Укажите название компании"
+	}
+	if len(name) > 200 {
+		return Company{}, "Название компании слишком длинное"
+	}
+
+	inn := strings.TrimSpace(req.INN)
+	if inn != "" && !digitsOnly(inn) {
+		return Company{}, "ИНН должен состоять только из цифр"
+	}
+	if inn != "" && len(inn) != 10 && len(inn) != 12 {
+		return Company{}, "ИНН должен содержать 10 или 12 цифр"
+	}
+
+	revenue := strings.TrimSpace(req.Revenue)
+	if revenue != "" && !digitsOnly(revenue) {
+		return Company{}, "Выручка должна быть числом"
+	}
+
+	return Company{
+		Name:        name,
+		INN:         inn,
+		Industry:    strings.TrimSpace(req.Industry),
+		Region:      strings.TrimSpace(req.Region),
+		City:        strings.TrimSpace(req.City),
+		Description: strings.TrimSpace(req.Description),
+		Revenue:     revenue,
+		ClientType:  strings.TrimSpace(req.ClientType),
+		OKVEDCode:   strings.TrimSpace(req.OKVEDCode),
+		OKVEDName:   strings.TrimSpace(req.OKVEDName),
+	}, ""
+}
+
+func digitsOnly(value string) bool {
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func newCompanyID() string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		panic(err)
+	}
+	return "cmp_" + hex.EncodeToString(buf)
+}
+
+func (h *Handler) Delete(c *gin.Context) {
+	err := h.repo.Delete(c.Request.Context(), c.Param("id"))
+	if IsNotFound(err) {
+		httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
+		return
+	}
+	if err != nil {
+		h.logger.Error("delete company", "error", err, "company_id", c.Param("id"))
+		httpx.Error(c, http.StatusInternalServerError, "company_unavailable", "Не удалось удалить компанию")
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *Handler) Relations(c *gin.Context) {

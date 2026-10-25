@@ -50,6 +50,9 @@ func main() {
 	v1.GET("/companies/:id", handler.Get)
 	v1.GET("/companies/:id/people", handler.People)
 	v1.GET("/companies/:id/relations", handler.Relations)
+	v1.POST("/companies", handler.Create)
+	v1.PUT("/companies/:id", handler.Update)
+	v1.DELETE("/companies/:id", handler.Delete)
 
 	server := &http.Server{
 		Addr:              config.String("COMPANY_ADDR", ":8081"),

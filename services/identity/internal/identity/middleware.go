@@ -26,6 +26,7 @@ func AuthMiddleware(store Store) gin.HandlerFunc {
 		c.Set("userID", user.ID)
 		c.Set("userEmail", user.Email)
 		c.Set("role", user.Role)
+		c.Set("primaryCompanyID", user.PrimaryCompanyID)
 		c.Next()
 	}
 }

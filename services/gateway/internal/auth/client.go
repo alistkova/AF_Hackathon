@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,8 +12,10 @@ import (
 )
 
 const RoleAdmin = "admin"
+const RoleOwner = "owner"
 
 var ErrUnauthorized = errors.New("unauthorized")
+var ErrRoleNotFound = errors.New("membership not found")
 
 type User struct {
 	ID    string `json:"id"`
@@ -51,6 +54,52 @@ func (c *Client) Companies(ctx context.Context, token string) ([]string, error) 
 		return []string{}, nil
 	}
 	return body.Items, nil
+}
+
+func (c *Client) Role(ctx context.Context, token, companyID string) (string, error) {
+	var body struct {
+		Items []struct {
+			CompanyID string `json:"company_id"`
+			Role      string `json:"role"`
+		} `json:"items"`
+	}
+	if err := c.get(ctx, "/api/v1/me/memberships", token, &body); err != nil {
+		return "", err
+	}
+	for _, item := range body.Items {
+		if item.CompanyID == companyID {
+			return item.Role, nil
+		}
+	}
+	return "", ErrRoleNotFound
+}
+
+func (c *Client) AddMembership(ctx context.Context, userID, companyID, role string) error {
+	payload, err := json.Marshal(map[string]string{
+		"user_id":    userID,
+		"company_id": companyID,
+		"role":       role,
+	})
+	if err != nil {
+		return err
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/internal/memberships", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := c.http.Do(request)
+	if err != nil {
+		return fmt.Errorf("call identity membership: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("identity membership returned %d", response.StatusCode)
+	}
+	return nil
 }
 
 func (c *Client) get(ctx context.Context, path, token string, target any) error {
