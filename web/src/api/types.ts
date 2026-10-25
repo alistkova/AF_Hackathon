@@ -19,8 +19,8 @@ export type FeedItem = {
   company_id: string;
   title: string;
   summary: string;
-  source: string;
-  url: string;
+  source?: string;
+  url?: string;
   published_at: string;
   relevance: number;
   reasons: string[];
