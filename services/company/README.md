@@ -20,12 +20,23 @@ Identity, sessions and access control live in a separate service. Company data i
 The OpenAPI contract is [contracts/openapi/company.yaml](../../contracts/openapi/company.yaml). The public contract exposed through the gateway is [contracts/openapi/gateway.yaml](../../contracts/openapi/gateway.yaml).
 
 ```text
-GET /healthz
-GET /api/v1/companies
-GET /api/v1/companies/{companyId}
-GET /api/v1/companies/{companyId}/people
-GET /api/v1/companies/{companyId}/relations
+GET    /healthz
+GET    /api/v1/companies
+POST   /api/v1/companies                  (internal; gateway only)
+GET    /api/v1/companies/{companyId}
+PUT    /api/v1/companies/{companyId}      (internal; gateway checks the owner)
+DELETE /api/v1/companies/{companyId}      (internal; rollback only)
+GET    /api/v1/companies/{companyId}/people
+GET    /api/v1/companies/{companyId}/relations
 ```
+
+`POST /api/v1/companies` validates the name, INN (10 or 12 digits) and revenue (digits), generates
+an `id` with the `cmp_` prefix and returns `201`. The gateway calls it when a user creates a
+company and then records the creator as the owner in identity. `PUT` validates the same fields
+and updates name, INN, industry, region, city, description and revenue; group, products,
+attributes, OKVED and client type are left unchanged. The gateway allows `PUT` only for the
+company owner or a system admin. `DELETE` is the compensating rollback used by the gateway when
+the ownership step fails.
 
 List response:
 

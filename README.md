@@ -38,10 +38,10 @@ Open <http://localhost:3000>. The demo starts Postgres, Redis, all Go services, 
 
 | Account | Role | Sees |
 | --- | --- | --- |
-| `demo-admin@alfa.local` | `admin` | every company, can grant access |
-| `demo-client@alfa.local` | `analyst` | only the companies granted to it |
+| `demo-admin@alfa.local` | `admin` | member of `magnit`, `severstal`, `sber` |
+| `demo-client@alfa.local` | `analyst` | owner of `magnit` and `severstal` |
 
-The password for both is `demo-password` (`DEMO_PASSWORD`). Override the emails with `DEMO_ADMIN_EMAIL` and `DEMO_CLIENT_EMAIL`, and the granted companies with `DEMO_CLIENT_COMPANIES`. `make demo-users` recreates the accounts on an already running stack.
+The password for both is `demo-password` (`DEMO_PASSWORD`). Override the emails with `DEMO_ADMIN_EMAIL` and `DEMO_CLIENT_EMAIL`, the admin's companies with `DEMO_ADMIN_COMPANIES` and the client's companies with `DEMO_CLIENT_COMPANIES`. The client becomes the owner of its companies, the admin a member. `make demo-users` recreates the accounts on an already running stack.
 
 Reset an empty demo:
 
@@ -162,12 +162,28 @@ make rag-clean    # remove the local processed-files cache (vectors stay in the 
 The company service owns company profiles in `company_db`. Clients call it through the gateway:
 
 ```bash
-curl -s localhost:8080/api/v1/companies
-curl -s localhost:8080/api/v1/companies/magnit
-curl -s localhost:8080/api/v1/companies/magnit/relations
+curl -s -b /tmp/alfa.jar localhost:8080/api/v1/companies
+curl -s -b /tmp/alfa.jar localhost:8080/api/v1/companies/magnit
+curl -s -b /tmp/alfa.jar localhost:8080/api/v1/companies/magnit/relations
+
+curl -s -b /tmp/alfa.jar -X POST localhost:8080/api/v1/companies \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"ООО «Ромашка»","inn":"7701234567","industry":"Ритейл","region":"Москва"}'
+
+curl -s -b /tmp/alfa.jar localhost:8080/api/v1/companies/cmp_123/members
+
+curl -s -b /tmp/alfa.jar -X PUT localhost:8080/api/v1/companies/cmp_123 \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"ООО «Ромашка Плюс»","inn":"7701234567","industry":"Ритейл","region":"Москва","city":"Москва","revenue":"2000000","description":"Обновлённое описание"}'
 ```
 
-`GET /api/v1/companies` returns `{"items":[...]}` ordered by name. `GET /api/v1/companies/{companyId}` returns one company with `people` and `relations`, or a `404` error. Relations resolve company groups, shared people and payment counterparties from `company_db`.
+`GET /api/v1/companies` returns `{"items":[...]}` ordered by name and limited to the companies
+the current user belongs to. `GET /api/v1/companies/{companyId}` returns one company with
+`people` and `relations`, or a `404` error; relations resolve company groups, shared people and
+payment counterparties from `company_db`. `POST /api/v1/companies` creates a company, makes the
+caller its owner and returns `201`. `PUT /api/v1/companies/{companyId}` updates the editable
+fields and is allowed only for the company owner or a system admin. The member endpoints are
+described in the identity section below.
 
 Demo data is loaded from `seed/companies.csv` by `make seed`. The hackathon datasets are imported with the same command:
 
@@ -195,13 +211,29 @@ curl -s -c /tmp/alfa.jar -X POST localhost:8080/api/v1/auth/login \
 
 curl -s -b /tmp/alfa.jar localhost:8080/api/v1/me
 curl -s -b /tmp/alfa.jar localhost:8080/api/v1/me/companies
+
+curl -s -b /tmp/alfa.jar -X PATCH localhost:8080/api/v1/me \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"new@example.com","primary_company_id":"magnit"}'
+
+curl -s -b /tmp/alfa.jar -X POST localhost:8080/api/v1/me/password \
+  -H 'Content-Type: application/json' \
+  -d '{"current_password":"secret-pass","new_password":"next-secret"}'
+
+curl -s -b /tmp/alfa.jar localhost:8080/api/v1/me/memberships
+curl -s -b /tmp/alfa.jar localhost:8080/api/v1/companies/magnit/members
+curl -s -b /tmp/alfa.jar -X POST localhost:8080/api/v1/companies/magnit/members \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"colleague@example.com"}'
 ```
 
-Passwords are bcrypt hashes and only SHA-256 token hashes are persisted. Sessions live in the `alfa_session` cookie (`SESSION_COOKIE_NAME`) or in an `Authorization: Bearer` header. The first registered user becomes `admin`, later users become `analyst`; granting and revoking company access requires `admin`. Login is rate-limited (`IDENTITY_LOGIN_MAX_ATTEMPTS` per `IDENTITY_LOGIN_WINDOW`), and expired sessions are pruned in the background.
+Passwords are bcrypt hashes and only SHA-256 token hashes are persisted. Sessions live in the `alfa_session` cookie (`SESSION_COOKIE_NAME`) or in an `Authorization: Bearer` header. The first registered user becomes `admin`, later users become `analyst`; granting and revoking company access through `/api/v1/access` requires `admin`. Login is rate-limited (`IDENTITY_LOGIN_MAX_ATTEMPTS` per `IDENTITY_LOGIN_WINDOW`), and expired sessions are pruned in the background. `PATCH /api/v1/me` updates the email and the primary company, `POST /api/v1/me/password` changes the password and revokes every other session.
+
+A company has an owner and members. The creator is the owner and can add or remove other registered users by email through `/api/v1/companies/{id}/members`. Members see the roster read-only. The last owner cannot be removed, and removing a member clears that member's primary company if it pointed at this company.
 
 Registration is controlled by `IDENTITY_REGISTRATION_ENABLED`. It is `true` in the demo `.env` so `scripts/bootstrap-users.sh` can create the demo accounts; set it to `false` after bootstrapping a real deployment.
 
-`/api/v1/companies` requires the same session. Without it the gateway returns `401`; an `analyst` only gets the companies granted to it, an `admin` gets everything. `/api/v1/me/companies` lists explicit grants only; admins are not enumerated there because the gateway bypasses the check for them. See [Access model](#access-model).
+`/api/v1/companies` requires the same session and returns only the companies the user belongs to, including for `admin`. There is no global company catalog. `POST /api/v1/companies` creates a company and records the creator as its owner. `/api/v1/me/companies` lists membership ids and `/api/v1/me/memberships` adds the roles. See [Access model](#access-model).
 
 Service details and configuration are in [services/identity/README.md](services/identity/README.md). The service contract is [contracts/openapi/identity.yaml](contracts/openapi/identity.yaml).
 
@@ -278,15 +310,17 @@ scripts/            dev, demo, migrate, seed, bootstrap-users, smoke, gen
 - The personal feed is ranked from content news by company name, industry, region and recency, with source, tag, search and period filters.
 - The ingestion worker is still a no-op; documents arrive through the API and the seed command.
 - Insight jobs are in-memory for now; `analysis_jobs`/`analysis_events` tables are reserved for durable persistence.
-- Identity is implemented: register, login, logout, `/me`, and per-user company access with admin-only grants.
+- Identity is implemented: register, login, logout, `/me`, profile editing (email, primary company, password), memberships with owner/member roles, owner-managed company members and company creation.
+- The web profile at `#/profile` shows the account, the user's company context (industry, region, revenue, OKVED, bank products) and the companies the user belongs to; `#/companies/new` creates a company, `#/companies/{id}/edit` edits it and `#/companies/{id}/members` manages its members. `#/profile/edit` changes email, primary company and password.
 
 ## Access model
 
 The gateway validates the session against identity and never trusts the client:
 
-- `admin` sees every company.
-- `analyst` sees only the companies in `company_access`.
-- The company list is filtered by forwarding the allowed ids to the company service; a detail request for a company outside that set returns `404`.
+- Visibility is membership-based for every role: a user sees only the companies in `company_access`. The `admin` role does not bypass company checks.
+- Each membership has a role, `owner` or `member`. The creator of a company becomes its owner and can add or remove other users by email and edit the company fields. Members can view the company and its roster but cannot manage or edit it. The last owner cannot be removed.
+- System admins keep global rights for documents and for `/api/v1/access/grant|revoke`; these grants accept an optional `role` so an owner can be assigned.
+- The company list is filtered by forwarding the membership ids to the company service; a detail request for a company outside that set returns `404`.
 - `/api/v1/feed` and `/api/v1/insights/*` also require a session. The feed checks `company_id`; job creation checks the body and job reads check the stored `company_id`, so a forbidden company returns `404`.
 - `/api/v1/documents*` requires an admin session. `/api/v1/news` and `/api/v1/search` are public.
 - Company, content, insight and identity ports are published on `127.0.0.1` for local debugging. Only the gateway is reachable externally, so public traffic must go through it.
