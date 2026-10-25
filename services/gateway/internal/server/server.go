@@ -42,6 +42,7 @@ func New(cfg Config) *gin.Engine {
 	guard := &guard{
 		identity:   auth.NewClient(cfg.IdentityURL),
 		insights:   newInsightClient(cfg.InsightURL),
+		companies:  newCompanyClient(cfg.CompanyURL),
 		cookieName: cfg.CookieName,
 		logger:     cfg.Logger,
 	}
@@ -52,12 +53,18 @@ func New(cfg Config) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "gateway"})
 	})
 
+	router.POST("/api/v1/companies", guard.session(), guard.createCompany)
+
 	companies := router.Group("/api/v1/companies")
-	companies.Use(guard.session(), guard.companyAccess())
-	companies.GET("", companyProxy)
-	companies.GET("/:id", companyProxy)
-	companies.GET("/:id/people", companyProxy)
-	companies.GET("/:id/relations", companyProxy)
+	companies.Use(guard.session())
+	companies.GET("", guard.companyAccess(), companyProxy)
+	companies.GET("/:id", guard.companyAccess(), companyProxy)
+	companies.GET("/:id/people", guard.companyAccess(), companyProxy)
+	companies.GET("/:id/relations", guard.companyAccess(), companyProxy)
+	companies.GET("/:id/members", guard.companyManageAccess(), identityProxy)
+	companies.POST("/:id/members", guard.companyManageAccess(), identityProxy)
+	companies.DELETE("/:id/members/:userId", guard.companyManageAccess(), identityProxy)
+	companies.PUT("/:id", guard.companyOwnerAccess(), guard.updateCompany)
 
 	feed := router.Group("/api/v1/feed")
 	feed.Use(guard.session(), guard.feedAccess())
@@ -99,6 +106,7 @@ func New(cfg Config) *gin.Engine {
 type guard struct {
 	identity   *auth.Client
 	insights   *insightClient
+	companies  *companyClient
 	cookieName string
 	logger     *slog.Logger
 }
@@ -129,13 +137,8 @@ func (g *guard) session() gin.HandlerFunc {
 
 func (g *guard) companyAccess() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		user, ok := currentUser(c)
-		if !ok {
+		if _, ok := currentUser(c); !ok {
 			httpx.Error(c, http.StatusUnauthorized, "unauthorized", "Требуется авторизация")
-			return
-		}
-		if user.Role == auth.RoleAdmin {
-			c.Next()
 			return
 		}
 
@@ -161,6 +164,65 @@ func (g *guard) companyAccess() gin.HandlerFunc {
 
 		if !slices.Contains(allowed, companyIDFromPath(c.Request.URL.Path)) {
 			httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
+			return
+		}
+		c.Next()
+	}
+}
+
+func (g *guard) companyManageAccess() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, ok := currentUser(c)
+		if !ok {
+			httpx.Error(c, http.StatusUnauthorized, "unauthorized", "Требуется авторизация")
+			return
+		}
+		if user.Role == auth.RoleAdmin {
+			c.Next()
+			return
+		}
+
+		allowed, ok := g.allowedCompanies(c)
+		if !ok {
+			return
+		}
+		if !slices.Contains(allowed, companyIDFromPath(c.Request.URL.Path)) {
+			httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
+			return
+		}
+		c.Next()
+	}
+}
+
+func (g *guard) companyOwnerAccess() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, ok := currentUser(c)
+		if !ok {
+			httpx.Error(c, http.StatusUnauthorized, "unauthorized", "Требуется авторизация")
+			return
+		}
+		if user.Role == auth.RoleAdmin {
+			c.Next()
+			return
+		}
+
+		companyID := companyIDFromPath(c.Request.URL.Path)
+		if companyID == "" {
+			httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
+			return
+		}
+
+		role, err := g.identity.Role(c.Request.Context(), c.GetString(contextToken), companyID)
+		if errors.Is(err, auth.ErrRoleNotFound) {
+			httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
+			return
+		}
+		if err != nil {
+			g.failIdentity(c, "resolve company role", err)
+			return
+		}
+		if role != auth.RoleOwner {
+			httpx.Error(c, http.StatusForbidden, "forbidden", "Недостаточно прав")
 			return
 		}
 		c.Next()
@@ -238,13 +300,9 @@ func (g *guard) requireAdmin() gin.HandlerFunc {
 }
 
 func (g *guard) allowCompany(c *gin.Context, companyID string) bool {
-	user, ok := currentUser(c)
-	if !ok {
+	if _, ok := currentUser(c); !ok {
 		httpx.Error(c, http.StatusUnauthorized, "unauthorized", "Требуется авторизация")
 		return false
-	}
-	if user.Role == auth.RoleAdmin {
-		return true
 	}
 
 	allowed, ok := g.allowedCompanies(c)

@@ -68,6 +68,49 @@ func (r *Repository) Get(ctx context.Context, id string) (Company, error) {
 	return item, nil
 }
 
+func (r *Repository) Create(ctx context.Context, item Company) (Company, error) {
+	return scanCompany(r.pool.QueryRow(ctx, `
+		INSERT INTO companies (
+			id, name, inn, industry, region, description, group_id,
+			okved_code, okved_name, client_type, revenue, city, products, attributes
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		RETURNING `+companyColumns,
+		item.ID, item.Name, item.INN, item.Industry, item.Region, item.Description, item.GroupID,
+		item.OKVEDCode, item.OKVEDName, item.ClientType, item.Revenue, item.City,
+		marshalJSON(item.Products), marshalJSON(item.Attributes)))
+}
+
+func (r *Repository) Update(ctx context.Context, item Company) (Company, error) {
+	updated, err := scanCompany(r.pool.QueryRow(ctx, `
+		UPDATE companies SET
+			name = $2,
+			inn = $3,
+			industry = $4,
+			region = $5,
+			description = $6,
+			revenue = $7,
+			city = $8
+		WHERE id = $1
+		RETURNING `+companyColumns,
+		item.ID, item.Name, item.INN, item.Industry, item.Region, item.Description, item.Revenue, item.City))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Company{}, ErrNotFound
+	}
+	return updated, err
+}
+
+func (r *Repository) Delete(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM companies WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *Repository) Upsert(ctx context.Context, items []Company) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

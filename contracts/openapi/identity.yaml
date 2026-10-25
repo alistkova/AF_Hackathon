@@ -134,12 +134,75 @@ paths:
                 $ref: "#/components/schemas/User"
         "401":
           $ref: "#/components/responses/Unauthorized"
+    patch:
+      operationId: updateCurrentUser
+      description: |
+        Updates the email and/or the primary company of the current user. At least one field
+        must be present. An empty `primary_company_id` clears the selection.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: Malformed request, invalid email or invalid company id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Email is already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/me/password:
+    post:
+      operationId: changePassword
+      description: |
+        Changes the password after verifying the current one. Every other session of the user
+        is revoked; the session used for the request stays valid.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordChange"
+      responses:
+        "204":
+          description: Password changed
+        "400":
+          description: Wrong current password or new password does not meet the requirements
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/v1/me/companies:
     get:
       operationId: listAccessibleCompanies
       description: |
-        Explicit company grants for the current user. Admins bypass company checks in the
-        gateway and are not enumerated here.
+        Company ids the current user belongs to. Used by the gateway for access checks;
+        roles are available from `/api/v1/me/memberships`.
       security:
         - sessionCookie: []
       responses:
@@ -153,10 +216,162 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/v1/me/memberships:
+    get:
+      operationId: listMemberships
+      description: Companies the current user belongs to, with the membership role.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Memberships
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MembershipList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/companies/{companyId}/members:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+    get:
+      operationId: listCompanyMembers
+      description: Company roster. Available to members of the company and system admins.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Company members
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemberList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Company not found or the user is not a member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      operationId: addCompanyMember
+      description: |
+        Adds an existing user to the company as a member. The requester must be an owner of
+        the company or a system admin. Adding an existing member is idempotent.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddMember"
+      responses:
+        "200":
+          description: Member added or already present
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Member"
+        "400":
+          description: Malformed request or invalid email
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The requester is not an owner of the company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Company or user not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/companies/{companyId}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/CompanyId"
+      - $ref: "#/components/parameters/UserId"
+    delete:
+      operationId: removeCompanyMember
+      description: |
+        Removes a member. The requester must be an owner of the company or a system admin.
+        The last owner cannot be removed. If the removed member had this company as the
+        primary company, that selection is cleared.
+      security:
+        - sessionCookie: []
+      responses:
+        "204":
+          description: Member removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The requester is not an owner of the company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Company or member not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The member is the last owner of the company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/internal/memberships:
+    post:
+      operationId: createMembership
+      description: |
+        Internal service endpoint used by the gateway after company creation. It records the
+        creator as the company owner. It is not routed through the public gateway.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MembershipInput"
+      responses:
+        "204":
+          description: Membership stored
+        "400":
+          description: Malformed request or invalid role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/v1/access/grant:
     post:
       operationId: grantCompanyAccess
-      description: Grants a user access to a company. Admin only.
+      description: |
+        Grants a user access to a company. Admin only. The optional role defaults to
+        `member`; the first owner of a company must be set with `role: owner`.
       security:
         - sessionCookie: []
       requestBody:
@@ -240,6 +455,21 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+  parameters:
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
   schemas:
     Credentials:
       type: object
@@ -255,7 +485,7 @@ components:
           maxLength: 72
     User:
       type: object
-      required: [id, email, role]
+      required: [id, email, role, primary_company_id]
       properties:
         id:
           type: string
@@ -265,6 +495,89 @@ components:
         role:
           type: string
           enum: [admin, analyst]
+        primary_company_id:
+          type: string
+          description: Company the user identifies with; empty when not chosen.
+    ProfileUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        primary_company_id:
+          type: string
+          maxLength: 128
+          description: Empty string clears the selection.
+    PasswordChange:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+          minLength: 8
+          maxLength: 72
+    Membership:
+      type: object
+      required: [company_id, role]
+      properties:
+        company_id:
+          type: string
+        role:
+          type: string
+          enum: [owner, member]
+    MembershipList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Membership"
+    Member:
+      type: object
+      required: [user_id, email, role]
+      properties:
+        user_id:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [owner, member]
+    MemberList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Member"
+    AddMember:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+    MembershipInput:
+      type: object
+      required: [user_id, company_id, role]
+      properties:
+        user_id:
+          type: string
+          minLength: 1
+        company_id:
+          type: string
+          minLength: 1
+        role:
+          type: string
+          enum: [owner, member]
     Session:
       type: object
       required: [token, expires_at, user]
@@ -286,6 +599,10 @@ components:
         company_id:
           type: string
           minLength: 1
+        role:
+          type: string
+          enum: [owner, member]
+          default: member
     CompanyList:
       type: object
       required: [items]

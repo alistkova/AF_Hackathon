@@ -55,13 +55,30 @@ admin_companies="$(curl -fsS -b "$ADMIN_JAR" "$BASE_URL/api/v1/companies" | json
 client_companies="$(curl -fsS -b "$CLIENT_JAR" "$BASE_URL/api/v1/companies" | json_items)"
 
 if [[ -z "$admin_companies" ]]; then
-  echo "smoke: admin sees no companies" >&2
+  echo "smoke: admin sees no companies; run 'make demo' or 'make dev' first" >&2
   exit 1
 fi
 if [[ -z "$client_companies" ]]; then
-  echo "smoke: client sees no companies; run 'make demo' or 'make dev' to grant access" >&2
+  echo "smoke: client sees no companies; run 'make demo' or 'make dev' first" >&2
   exit 1
 fi
+client_primary="$(curl -fsS -b "$CLIENT_JAR" "$BASE_URL/api/v1/me" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("primary_company_id", ""))' | tr -d '\r')"
+if [[ -z "$client_primary" ]]; then
+  echo "smoke: client has no primary company; run 'make demo' or 'make dev' first" >&2
+  exit 1
+fi
+
+memberships="$(curl -fsS -b "$CLIENT_JAR" "$BASE_URL/api/v1/me/memberships")"
+python3 -c '
+import json,sys
+payload = json.load(sys.stdin)
+items = payload["items"]
+assert items, payload
+for item in items:
+    assert item["role"] == "owner", item
+' <<<"$memberships"
+
 for company in $client_companies; do
   if [[ " $admin_companies " != *" $company "* ]]; then
     echo "smoke: client sees $company which admin does not" >&2

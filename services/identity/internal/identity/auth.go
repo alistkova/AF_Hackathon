@@ -22,12 +22,16 @@ const (
 	RoleAdmin   = "admin"
 	RoleAnalyst = "analyst"
 
+	CompanyRoleOwner  = "owner"
+	CompanyRoleMember = "member"
+
 	DefaultSessionTTL = 7 * 24 * time.Hour
 	defaultCookieName = "alfa_session"
 
 	minPasswordLength = 8
 	maxPasswordBytes  = 72
 	maxEmailLength    = 254
+	maxCompanyIDBytes = 128
 )
 
 var (
@@ -35,6 +39,8 @@ var (
 	ErrEmailExists        = errors.New("email already registered")
 	ErrUnauthorized       = errors.New("unauthorized")
 	ErrUserNotFound       = errors.New("user not found")
+	ErrMemberNotFound     = errors.New("member not found")
+	ErrLastOwner          = errors.New("last owner")
 	ErrInvalidInput       = errors.New("invalid input")
 )
 
@@ -57,11 +63,15 @@ func registrationEnabled() bool {
 	return value == "true" || value == "1" || value == "yes" || value == "on"
 }
 
+func validCompanyRole(role string) bool {
+	return role == CompanyRoleOwner || role == CompanyRoleMember
+}
+
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
-func validateCredentials(email, password string) (string, error) {
+func validateEmail(email string) (string, error) {
 	email = normalizeEmail(email)
 	if email == "" || len(email) > maxEmailLength {
 		return "", ErrInvalidInput
@@ -70,8 +80,23 @@ func validateCredentials(email, password string) (string, error) {
 	if err != nil || addr.Address != email {
 		return "", ErrInvalidInput
 	}
+	return email, nil
+}
+
+func validatePassword(password string) error {
 	if utf8.RuneCountInString(password) < minPasswordLength || len(password) > maxPasswordBytes {
-		return "", ErrInvalidInput
+		return ErrInvalidInput
+	}
+	return nil
+}
+
+func validateCredentials(email, password string) (string, error) {
+	email, err := validateEmail(email)
+	if err != nil {
+		return "", err
+	}
+	if err := validatePassword(password); err != nil {
+		return "", err
 	}
 	return email, nil
 }

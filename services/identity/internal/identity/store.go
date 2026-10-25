@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 )
@@ -17,7 +18,7 @@ type MemStore struct {
 	pwd     map[string]string
 	byEmail map[string]string
 	sess    map[string]memSession
-	acc     map[string]map[string]bool
+	acc     map[string]map[string]string
 }
 
 func NewMemStore() *MemStore {
@@ -26,7 +27,7 @@ func NewMemStore() *MemStore {
 		pwd:     map[string]string{},
 		byEmail: map[string]string{},
 		sess:    map[string]memSession{},
-		acc:     map[string]map[string]bool{},
+		acc:     map[string]map[string]string{},
 	}
 }
 
@@ -57,7 +58,7 @@ func (m *MemStore) Register(_ context.Context, email, password string) (User, er
 	m.users[user.ID] = user
 	m.pwd[user.ID] = hash
 	m.byEmail[email] = user.ID
-	m.acc[user.ID] = map[string]bool{}
+	m.acc[user.ID] = map[string]string{}
 	return user, nil
 }
 
@@ -116,10 +117,161 @@ func (m *MemStore) AccessibleCompanies(_ context.Context, userID string) ([]stri
 	for companyID := range m.acc[userID] {
 		items = append(items, companyID)
 	}
+	sort.Strings(items)
 	return items, nil
 }
 
-func (m *MemStore) GrantAccess(_ context.Context, userID, companyID string) error {
+func (m *MemStore) Memberships(_ context.Context, userID string) ([]Membership, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	items := make([]Membership, 0, len(m.acc[userID]))
+	for companyID, role := range m.acc[userID] {
+		items = append(items, Membership{CompanyID: companyID, Role: role})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CompanyID < items[j].CompanyID })
+	return items, nil
+}
+
+func (m *MemStore) Members(_ context.Context, companyID string) ([]Member, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	items := make([]Member, 0)
+	for userID, companies := range m.acc {
+		role, ok := companies[companyID]
+		if !ok {
+			continue
+		}
+		user, exists := m.users[userID]
+		if !exists {
+			continue
+		}
+		items = append(items, Member{UserID: userID, Email: user.Email, Role: role})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Role != items[j].Role {
+			return items[i].Role == CompanyRoleOwner
+		}
+		return items[i].Email < items[j].Email
+	})
+	return items, nil
+}
+
+func (m *MemStore) MemberRole(_ context.Context, companyID, userID string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	role, ok := m.acc[userID][companyID]
+	if !ok {
+		return "", ErrMemberNotFound
+	}
+	return role, nil
+}
+
+func (m *MemStore) AddMember(_ context.Context, companyID, email string) (Member, error) {
+	email, err := validateEmail(email)
+	if err != nil {
+		return Member{}, err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	userID, ok := m.byEmail[email]
+	if !ok {
+		return Member{}, ErrUserNotFound
+	}
+	if m.acc[userID] == nil {
+		m.acc[userID] = map[string]string{}
+	}
+	if _, exists := m.acc[userID][companyID]; !exists {
+		m.acc[userID][companyID] = CompanyRoleMember
+	}
+	return Member{UserID: userID, Email: email, Role: m.acc[userID][companyID]}, nil
+}
+
+func (m *MemStore) RemoveMember(_ context.Context, companyID, userID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	role, ok := m.acc[userID][companyID]
+	if !ok {
+		return ErrMemberNotFound
+	}
+	if role == CompanyRoleOwner {
+		owners := 0
+		for _, companies := range m.acc {
+			if companies[companyID] == CompanyRoleOwner {
+				owners++
+			}
+		}
+		if owners <= 1 {
+			return ErrLastOwner
+		}
+	}
+
+	delete(m.acc[userID], companyID)
+	if user, exists := m.users[userID]; exists && user.PrimaryCompanyID == companyID {
+		user.PrimaryCompanyID = ""
+		m.users[userID] = user
+	}
+	return nil
+}
+
+func (m *MemStore) UpdateProfile(_ context.Context, userID string, input ProfileUpdate) (User, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	user, ok := m.users[userID]
+	if !ok {
+		return User{}, ErrUserNotFound
+	}
+
+	if input.Email != nil {
+		email := *input.Email
+		if existing, exists := m.byEmail[email]; exists && existing != userID {
+			return User{}, ErrEmailExists
+		}
+		delete(m.byEmail, user.Email)
+		m.byEmail[email] = userID
+		user.Email = email
+	}
+	if input.PrimaryCompanyID != nil {
+		user.PrimaryCompanyID = *input.PrimaryCompanyID
+	}
+	m.users[userID] = user
+	return user, nil
+}
+
+func (m *MemStore) ChangePassword(_ context.Context, userID, token, current, next string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	hash, ok := m.pwd[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	if _, err := verifyPassword(hash, current); err != nil {
+		return ErrInvalidCredentials
+	}
+
+	nextHash, err := hashPassword(next)
+	if err != nil {
+		return err
+	}
+	m.pwd[userID] = nextHash
+
+	keep := hashToken(token)
+	for key, session := range m.sess {
+		if session.userID == userID && key != keep {
+			delete(m.sess, key)
+		}
+	}
+	return nil
+}
+
+func (m *MemStore) GrantAccess(_ context.Context, userID, companyID, role string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -127,16 +279,21 @@ func (m *MemStore) GrantAccess(_ context.Context, userID, companyID string) erro
 		return ErrUserNotFound
 	}
 	if m.acc[userID] == nil {
-		m.acc[userID] = map[string]bool{}
+		m.acc[userID] = map[string]string{}
 	}
-	m.acc[userID][companyID] = true
+	m.acc[userID][companyID] = role
 	return nil
 }
 
 func (m *MemStore) RevokeAccess(_ context.Context, userID, companyID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
 	delete(m.acc[userID], companyID)
+	if user, exists := m.users[userID]; exists && user.PrimaryCompanyID == companyID {
+		user.PrimaryCompanyID = ""
+		m.users[userID] = user
+	}
 	return nil
 }
 

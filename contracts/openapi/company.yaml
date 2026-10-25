@@ -38,7 +38,84 @@ paths:
                 $ref: "#/components/schemas/CompanyList"
         "500":
           $ref: "#/components/responses/InternalError"
+    post:
+      operationId: createCompany
+      description: |
+        Internal endpoint used by the gateway. Creates a company and assigns the id. The
+        gateway then records the creator as the company owner in identity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyCreate"
+      responses:
+        "201":
+          description: Company created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+        "400":
+          description: Invalid company data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/v1/companies/{companyId}:
+    put:
+      operationId: updateCompany
+      description: |
+        Updates the editable fields of a company. Internal endpoint; the gateway checks that
+        the caller is the company owner or a system admin.
+      parameters:
+        - $ref: "#/components/parameters/CompanyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanyUpdate"
+      responses:
+        "200":
+          description: Updated company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+        "400":
+          description: Invalid company data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Company not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      operationId: deleteCompany
+      description: |
+        Internal rollback endpoint used by the gateway when ownership could not be recorded.
+      parameters:
+        - $ref: "#/components/parameters/CompanyId"
+      responses:
+        "204":
+          description: Company deleted
+        "404":
+          description: Company not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
     get:
       operationId: getCompany
       parameters:
@@ -154,6 +231,58 @@ components:
         person:
           $ref: "#/components/schemas/Person"
         relation:
+          type: string
+    CompanyUpdate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        inn:
+          type: string
+          pattern: "^([0-9]{10}|[0-9]{12})$"
+        industry:
+          type: string
+        region:
+          type: string
+        city:
+          type: string
+        description:
+          type: string
+        revenue:
+          type: string
+          pattern: "^[0-9]+$"
+    CompanyCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        inn:
+          type: string
+          description: 10 or 12 digits.
+          pattern: "^([0-9]{10}|[0-9]{12})$"
+        industry:
+          type: string
+        region:
+          type: string
+        city:
+          type: string
+        description:
+          type: string
+        revenue:
+          type: string
+          description: Numeric string in rubles.
+          pattern: "^[0-9]+$"
+        client_type:
+          type: string
+        okved_code:
+          type: string
+        okved_name:
           type: string
     Company:
       type: object

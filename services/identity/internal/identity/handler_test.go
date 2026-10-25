@@ -37,7 +37,16 @@ func newTestRouter(store Store) *gin.Engine {
 	protected := v1.Group("")
 	protected.Use(auth)
 	protected.GET("/me", handler.Me)
+	protected.PATCH("/me", handler.UpdateMe)
+	protected.POST("/me/password", handler.ChangePassword)
 	protected.GET("/me/companies", handler.AccessibleCompanies)
+	protected.GET("/me/memberships", handler.Memberships)
+	protected.GET("/companies/:companyId/members", handler.CompanyMembers)
+	protected.POST("/companies/:companyId/members", handler.AddCompanyMember)
+	protected.DELETE("/companies/:companyId/members/:userId", handler.RemoveCompanyMember)
+
+	internal := v1.Group("/internal")
+	internal.POST("/memberships", handler.CreateMembership)
 
 	admin := protected.Group("/access")
 	admin.Use(RequireAdmin())
@@ -348,6 +357,374 @@ func TestLoginIsRateLimited(t *testing.T) {
 	rec = perform(router, http.MethodPost, "/api/v1/auth/login", `{"email":"user@example.com","password":"secret-pass"}`)
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("correct password while blocked: status %d, want %d", rec.Code, http.StatusTooManyRequests)
+	}
+}
+
+func TestUpdateProfileEmail(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "user@example.com", "secret-pass")
+	session := loginUser(t, router, "user@example.com", "secret-pass")
+
+	rec := performWithToken(router, http.MethodPatch, "/api/v1/me", `{"email":"New@Example.com"}`, session.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, want %d body %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got User
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode user: %v", err)
+	}
+	if got.Email != "new@example.com" {
+		t.Fatalf("email = %q, want new@example.com", got.Email)
+	}
+
+	rec = performWithToken(router, http.MethodGet, "/api/v1/me", "", session.Token)
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode me: %v", err)
+	}
+	if got.Email != "new@example.com" {
+		t.Fatalf("me email = %q, want new@example.com", got.Email)
+	}
+}
+
+func TestUpdateProfileRejectsDuplicateEmail(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "first@example.com", "secret-pass")
+	registerUser(t, router, "second@example.com", "secret-pass")
+	session := loginUser(t, router, "first@example.com", "secret-pass")
+
+	rec := performWithToken(router, http.MethodPatch, "/api/v1/me", `{"email":"second@example.com"}`, session.Token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status %d, want %d", rec.Code, http.StatusConflict)
+	}
+}
+
+func TestUpdateProfileRejectsInvalidInput(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "user@example.com", "secret-pass")
+	session := loginUser(t, router, "user@example.com", "secret-pass")
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"invalid email", `{"email":"not-an-email"}`},
+		{"empty body", `{}`},
+		{"long company id", fmt.Sprintf(`{"primary_company_id":%q}`, strings.Repeat("x", 200))},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := performWithToken(router, http.MethodPatch, "/api/v1/me", tc.body, session.Token)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status %d, want %d", rec.Code, http.StatusBadRequest)
+			}
+		})
+	}
+
+	rec := performWithToken(router, http.MethodPatch, "/api/v1/me", `{"email":"a@b.com"}`, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestUpdatePrimaryCompany(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "user@example.com", "secret-pass")
+	session := loginUser(t, router, "user@example.com", "secret-pass")
+
+	rec := performWithToken(router, http.MethodPatch, "/api/v1/me", `{"primary_company_id":"magnit"}`, session.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	rec = performWithToken(router, http.MethodGet, "/api/v1/me", "", session.Token)
+	var got User
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode me: %v", err)
+	}
+	if got.PrimaryCompanyID != "magnit" {
+		t.Fatalf("primary company = %q, want magnit", got.PrimaryCompanyID)
+	}
+
+	reopened := loginUser(t, router, "user@example.com", "secret-pass")
+	if reopened.User.PrimaryCompanyID != "magnit" {
+		t.Fatalf("login primary company = %q, want magnit", reopened.User.PrimaryCompanyID)
+	}
+
+	rec = performWithToken(router, http.MethodPatch, "/api/v1/me", `{"primary_company_id":""}`, session.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clear status %d, want %d", rec.Code, http.StatusOK)
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode user: %v", err)
+	}
+	if got.PrimaryCompanyID != "" {
+		t.Fatalf("primary company = %q, want empty", got.PrimaryCompanyID)
+	}
+}
+
+func TestChangePassword(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "user@example.com", "secret-pass")
+	session := loginUser(t, router, "user@example.com", "secret-pass")
+	other := loginUser(t, router, "user@example.com", "secret-pass")
+
+	rec := performWithToken(router, http.MethodPost, "/api/v1/me/password",
+		`{"current_password":"wrong-pass","new_password":"next-secret"}`, session.Token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("wrong current status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	rec = performWithToken(router, http.MethodPost, "/api/v1/me/password",
+		`{"current_password":"secret-pass","new_password":"short"}`, session.Token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("short new password status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	rec = performWithToken(router, http.MethodPost, "/api/v1/me/password",
+		`{"current_password":"secret-pass","new_password":"next-secret"}`, session.Token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status %d, want %d body %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	rec = perform(router, http.MethodPost, "/api/v1/auth/login", `{"email":"user@example.com","password":"secret-pass"}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("old password status %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	loginUser(t, router, "user@example.com", "next-secret")
+
+	rec = performWithToken(router, http.MethodGet, "/api/v1/me", "", session.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("current session status %d, want %d", rec.Code, http.StatusOK)
+	}
+	rec = performWithToken(router, http.MethodGet, "/api/v1/me", "", other.Token)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("other session status %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestMembershipsAndMembers(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	admin := registerUser(t, router, "owner@example.com", "secret-pass")
+	owner := registerUser(t, router, "analyst@example.com", "secret-pass")
+	member := registerUser(t, router, "member@example.com", "secret-pass")
+	adminSession := loginUser(t, router, "owner@example.com", "secret-pass")
+	ownerSession := loginUser(t, router, "analyst@example.com", "secret-pass")
+	memberSession := loginUser(t, router, "member@example.com", "secret-pass")
+
+	rec := performWithToken(router, http.MethodPost, "/api/v1/access/grant",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"owner"}`, owner.ID), adminSession.Token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("grant owner status %d, want %d", rec.Code, http.StatusNoContent)
+	}
+	rec = performWithToken(router, http.MethodPost, "/api/v1/access/grant",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1"}`, member.ID), adminSession.Token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("grant member status %d, want %d", rec.Code, http.StatusNoContent)
+	}
+
+	rec = performWithToken(router, http.MethodGet, "/api/v1/me/memberships", "", ownerSession.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("memberships status %d, want %d", rec.Code, http.StatusOK)
+	}
+	var memberships struct {
+		Items []Membership `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &memberships); err != nil {
+		t.Fatalf("decode memberships: %v", err)
+	}
+	if len(memberships.Items) != 1 || memberships.Items[0].CompanyID != "c1" || memberships.Items[0].Role != CompanyRoleOwner {
+		t.Fatalf("memberships = %+v, want c1 owner", memberships.Items)
+	}
+
+	rec = performWithToken(router, http.MethodGet, "/api/v1/companies/c1/members", "", memberSession.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("members status %d, want %d", rec.Code, http.StatusOK)
+	}
+	var members struct {
+		Items []Member `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &members); err != nil {
+		t.Fatalf("decode members: %v", err)
+	}
+	if len(members.Items) != 2 {
+		t.Fatalf("members = %+v, want 2", members.Items)
+	}
+
+	rec = performWithToken(router, http.MethodPost, "/api/v1/companies/c1/members",
+		fmt.Sprintf(`{"email":%q}`, member.Email), ownerSession.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("duplicate add status %d, want %d", rec.Code, http.StatusOK)
+	}
+	rec = performWithToken(router, http.MethodPost, "/api/v1/companies/c1/members",
+		`{"email":"missing@example.com"}`, ownerSession.Token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown email status %d, want %d", rec.Code, http.StatusNotFound)
+	}
+
+	rec = performWithToken(router, http.MethodDelete, "/api/v1/companies/c1/members/"+member.ID, "", ownerSession.Token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("remove member status %d, want %d", rec.Code, http.StatusNoContent)
+	}
+	rec = performWithToken(router, http.MethodDelete, "/api/v1/companies/c1/members/"+member.ID, "", ownerSession.Token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("second remove status %d, want %d", rec.Code, http.StatusNotFound)
+	}
+
+	rec = performWithToken(router, http.MethodDelete, "/api/v1/companies/c1/members/"+owner.ID, "", ownerSession.Token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("last owner status %d, want %d", rec.Code, http.StatusConflict)
+	}
+
+	if admin.ID == "" {
+		t.Fatal("admin id is empty")
+	}
+}
+
+func TestCompanyMemberRequiresOwner(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "owner@example.com", "secret-pass")
+	owner := registerUser(t, router, "analyst@example.com", "secret-pass")
+	member := registerUser(t, router, "member@example.com", "secret-pass")
+	outsider := registerUser(t, router, "outsider@example.com", "secret-pass")
+	adminSession := loginUser(t, router, "owner@example.com", "secret-pass")
+	memberSession := loginUser(t, router, "member@example.com", "secret-pass")
+
+	for _, grant := range []struct {
+		userID string
+		role   string
+	}{
+		{owner.ID, CompanyRoleOwner},
+		{member.ID, CompanyRoleMember},
+	} {
+		body := fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":%q}`, grant.userID, grant.role)
+		rec := performWithToken(router, http.MethodPost, "/api/v1/access/grant", body, adminSession.Token)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("grant %s status %d", grant.role, rec.Code)
+		}
+	}
+
+	rec := performWithToken(router, http.MethodPost, "/api/v1/companies/c1/members",
+		fmt.Sprintf(`{"email":%q}`, outsider.Email), memberSession.Token)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("member add status %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	outsiderSession := loginUser(t, router, "outsider@example.com", "secret-pass")
+	rec = performWithToken(router, http.MethodGet, "/api/v1/companies/c1/members", "", outsiderSession.Token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("outsider read status %d, want %d", rec.Code, http.StatusNotFound)
+	}
+
+	rec = performWithToken(router, http.MethodPost, "/api/v1/companies/c1/members",
+		fmt.Sprintf(`{"email":%q}`, outsider.Email), adminSession.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin add status %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestRemoveMemberClearsPrimary(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "owner@example.com", "secret-pass")
+	owner := registerUser(t, router, "analyst@example.com", "secret-pass")
+	member := registerUser(t, router, "member@example.com", "secret-pass")
+	adminSession := loginUser(t, router, "owner@example.com", "secret-pass")
+	ownerSession := loginUser(t, router, "analyst@example.com", "secret-pass")
+	memberSession := loginUser(t, router, "member@example.com", "secret-pass")
+
+	for _, grant := range []struct {
+		userID string
+		role   string
+	}{
+		{owner.ID, CompanyRoleOwner},
+		{member.ID, CompanyRoleMember},
+	} {
+		body := fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":%q}`, grant.userID, grant.role)
+		rec := performWithToken(router, http.MethodPost, "/api/v1/access/grant", body, adminSession.Token)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("grant status %d", rec.Code)
+		}
+	}
+
+	rec := performWithToken(router, http.MethodPatch, "/api/v1/me", `{"primary_company_id":"c1"}`, memberSession.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("profile status %d", rec.Code)
+	}
+
+	rec = performWithToken(router, http.MethodDelete, "/api/v1/companies/c1/members/"+member.ID, "", ownerSession.Token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("remove status %d", rec.Code)
+	}
+
+	rec = performWithToken(router, http.MethodGet, "/api/v1/me", "", memberSession.Token)
+	var me User
+	if err := json.Unmarshal(rec.Body.Bytes(), &me); err != nil {
+		t.Fatalf("decode me: %v", err)
+	}
+	if me.PrimaryCompanyID != "" {
+		t.Fatalf("primary company = %q, want empty", me.PrimaryCompanyID)
+	}
+}
+
+func TestInternalMembership(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "owner@example.com", "secret-pass")
+	user := registerUser(t, router, "analyst@example.com", "secret-pass")
+
+	rec := perform(router, http.MethodPost, "/api/v1/internal/memberships",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"owner"}`, user.ID))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status %d, want %d body %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	session := loginUser(t, router, "analyst@example.com", "secret-pass")
+	rec = performWithToken(router, http.MethodGet, "/api/v1/me/memberships", "", session.Token)
+	var memberships struct {
+		Items []Membership `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &memberships); err != nil {
+		t.Fatalf("decode memberships: %v", err)
+	}
+	if len(memberships.Items) != 1 || memberships.Items[0].Role != CompanyRoleOwner {
+		t.Fatalf("memberships = %+v, want c1 owner", memberships.Items)
+	}
+
+	rec = perform(router, http.MethodPost, "/api/v1/internal/memberships",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"bad"}`, user.ID))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid role status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestRevokeClearsPrimary(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "owner@example.com", "secret-pass")
+	user := registerUser(t, router, "analyst@example.com", "secret-pass")
+	adminSession := loginUser(t, router, "owner@example.com", "secret-pass")
+	userSession := loginUser(t, router, "analyst@example.com", "secret-pass")
+
+	rec := performWithToken(router, http.MethodPost, "/api/v1/access/grant",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"owner"}`, user.ID), adminSession.Token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("grant status %d", rec.Code)
+	}
+	rec = performWithToken(router, http.MethodPatch, "/api/v1/me", `{"primary_company_id":"c1"}`, userSession.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("profile status %d", rec.Code)
+	}
+
+	rec = performWithToken(router, http.MethodPost, "/api/v1/access/revoke",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1"}`, user.ID), adminSession.Token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("revoke status %d", rec.Code)
+	}
+
+	rec = performWithToken(router, http.MethodGet, "/api/v1/me", "", userSession.Token)
+	var me User
+	if err := json.Unmarshal(rec.Body.Bytes(), &me); err != nil {
+		t.Fatalf("decode me: %v", err)
+	}
+	if me.PrimaryCompanyID != "" {
+		t.Fatalf("primary company = %q, want empty", me.PrimaryCompanyID)
 	}
 }
 
