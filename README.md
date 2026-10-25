@@ -228,9 +228,9 @@ RAG chunks are stored by the content service as well: `POST /api/v1/rag/chunks` 
 
 `GET /api/v1/feed?company_id=magnit` returns the company feed. Insight loads the profile from the company service, loads recent news from `GET /api/v1/news?kind=news`, and ranks items by company name, industry, region and recency. Every item carries `relevance` and human-readable `reasons`, so the web client can explain why the event is in the feed. The feed accepts `limit` (default 30, max 50) and `offset`; the response contains `items`, `total` and `facets`.
 
-Filters are applied after ranking: `source`, `tag` and `sector` are repeatable (or comma-separated), `q` searches title, summary, source, tags and sectors, and `from` / `to` accept `2006-01-02` or RFC3339. Facets contain unfiltered source, tag and sector counts so the client can keep filter options stable. `total` is the filtered count.
+Filters are applied after ranking: `source`, `tag` and `sector` are repeatable (or comma-separated), `q` searches title, summary, source, tags and sectors, and `from` / `to` accept `2006-01-02` or RFC3339. `sort` is `relevance` (default) or `date`. Facets contain unfiltered source, tag and sector counts so the client can keep filter options stable. `total` is the filtered count.
 
-Insight never reads `content_db`. The content service stays the source of truth for news, and the feed is ranked in memory per request. Filters currently cover the latest 200 news items fetched from content; if that window becomes a limitation, the next step is pushing the same filters into the content query. If nothing matches the company profile, the newest news items are returned as `Общая повестка`.
+Insight never reads `content_db`. The content service stays the source of truth for news, and the feed is ranked in memory per request. The news list is cached in insight for 30 seconds so filter changes do not refetch the content service every time. Filters currently cover the latest 200 news items fetched from content; if that window becomes a limitation, the next step is pushing the same filters into the content query. If nothing matches the company profile, the newest news items are returned as `Общая повестка`.
 
 ## SSE contract
 

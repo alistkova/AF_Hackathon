@@ -14,6 +14,11 @@ import (
 
 const maxFeedQueryLength = 200
 
+const (
+	feedSortRelevance = "relevance"
+	feedSortDate      = "date"
+)
+
 type FeedFilter struct {
 	Sources []string
 	Tags    []string
@@ -83,6 +88,51 @@ func feedDate(c *gin.Context, name string, endOfDay bool) (*time.Time, bool) {
 
 	httpx.Error(c, http.StatusBadRequest, "invalid_request", "Параметр "+name+" должен быть датой в формате 2006-01-02 или RFC3339")
 	return nil, false
+}
+
+func feedSortParam(c *gin.Context) (string, bool) {
+	raw := strings.ToLower(strings.TrimSpace(c.Query("sort")))
+	switch raw {
+	case "", feedSortRelevance:
+		return feedSortRelevance, true
+	case feedSortDate:
+		return feedSortDate, true
+	default:
+		httpx.Error(c, http.StatusBadRequest, "invalid_request", "Параметр sort должен быть relevance или date")
+		return "", false
+	}
+}
+
+func SortFeed(items []FeedItem, sortBy string) []FeedItem {
+	if sortBy != feedSortDate {
+		return items
+	}
+
+	sorted := make([]FeedItem, len(items))
+	copy(sorted, items)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		left := publishedTime(sorted[i].PublishedAt)
+		right := publishedTime(sorted[j].PublishedAt)
+		if !left.Equal(right) {
+			if left.IsZero() {
+				return false
+			}
+			if right.IsZero() {
+				return true
+			}
+			return left.After(right)
+		}
+		if sorted[i].Relevance != sorted[j].Relevance {
+			return sorted[i].Relevance > sorted[j].Relevance
+		}
+		return sorted[i].EventID < sorted[j].EventID
+	})
+	return sorted
+}
+
+func publishedTime(raw string) time.Time {
+	published, _ := time.Parse(time.RFC3339, raw)
+	return published
 }
 
 func queryValues(c *gin.Context, name string) []string {

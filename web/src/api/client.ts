@@ -46,14 +46,19 @@ export const api = {
   logout: () => requestVoid("/api/v1/auth/logout", { method: "POST" }),
   companies: () => request<{ items: Company[] }>("/api/v1/companies"),
   company: (id: string) => request<Company>(`/api/v1/companies/${id}`),
-  feed: (companyId: string, filters: FeedFilters = {}) => {
-    const params = new URLSearchParams({ company_id: companyId });
-    if (filters.source) params.set("source", filters.source);
-    if (filters.tag) params.set("tag", filters.tag);
-    if (filters.sector) params.set("sector", filters.sector);
+  feed: (companyId: string, filters: FeedFilters = {}, limit = 30, offset = 0) => {
+    const params = new URLSearchParams({
+      company_id: companyId,
+      limit: String(limit),
+      offset: String(offset),
+    });
+    filters.sources?.forEach((value) => params.append("source", value));
+    filters.tags?.forEach((value) => params.append("tag", value));
+    filters.sectors?.forEach((value) => params.append("sector", value));
     if (filters.query?.trim()) params.set("q", filters.query.trim());
     if (filters.from) params.set("from", filters.from);
     if (filters.to) params.set("to", filters.to);
+    if (filters.sort) params.set("sort", filters.sort);
 
     return request<{ items: FeedItem[]; total: number; facets: FeedFacets }>(
       `/api/v1/feed?${params.toString()}`,

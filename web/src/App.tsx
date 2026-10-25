@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api/client";
-import type { User } from "./api/types";
+import type { FeedFacets, User } from "./api/types";
 import { Login } from "./features/auth/Login";
 import { CompanyList } from "./features/company/CompanyList";
 import { CompanyProfile } from "./features/company/CompanyProfile";
 import { Feed } from "./features/feed/Feed";
+import { FeedFilters } from "./features/feed/FeedFilters";
+import { createDefaultFeedFilters, toggleValue, type FeedFilterState } from "./features/feed/filters";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -36,6 +38,8 @@ export default function App() {
 
 function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [companyId, setCompanyId] = useState("");
+  const [filters, setFilters] = useState<FeedFilterState>(createDefaultFeedFilters);
+  const [facets, setFacets] = useState<FeedFacets | null>(null);
   const companies = useQuery({
     queryKey: ["companies"],
     queryFn: api.companies,
@@ -46,6 +50,28 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
       setCompanyId(companies.data.items[0].id);
     }
   }, [companyId, companies.data]);
+
+  function selectCompany(id: string) {
+    setCompanyId(id);
+    setFilters(createDefaultFeedFilters());
+    setFacets(null);
+  }
+
+  function resetFilters() {
+    setFilters(createDefaultFeedFilters());
+  }
+
+  function toggleSource(source: string) {
+    setFilters((current) => ({ ...current, sources: toggleValue(current.sources, source) }));
+  }
+
+  function toggleTag(tag: string) {
+    setFilters((current) => ({ ...current, tags: toggleValue(current.tags, tag) }));
+  }
+
+  function toggleSector(sector: string) {
+    setFilters((current) => ({ ...current, sectors: toggleValue(current.sectors, sector) }));
+  }
 
   async function logout() {
     await api.logout().catch(() => undefined);
@@ -88,7 +114,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
 
       <main className="mx-auto grid max-w-7xl gap-6 px-6 py-6 lg:grid-cols-[280px_minmax(0,1fr)]">
         <aside className="space-y-4">
-          <CompanyList selectedId={companyId} onSelect={setCompanyId} />
+          <CompanyList selectedId={companyId} onSelect={selectCompany} />
           <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs leading-5 text-slate-500 shadow-sm">
             <p className="font-semibold text-slate-700">Как это работает</p>
             <p className="mt-2">
@@ -96,13 +122,30 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
               Разбор запускает агента отдельно, прогресс приходит по SSE.
             </p>
           </div>
+          {companyId && (
+            <FeedFilters
+              filters={filters}
+              facets={facets}
+              onChange={setFilters}
+              onReset={resetFilters}
+            />
+          )}
         </aside>
 
         <div className="min-w-0">
           {companyId ? (
             <>
               <CompanyProfile companyId={companyId} />
-              <Feed key={companyId} companyId={companyId} />
+              <Feed
+                key={companyId}
+                companyId={companyId}
+                filters={filters}
+                onFacetsChange={setFacets}
+                onResetFilters={resetFilters}
+                onToggleSource={toggleSource}
+                onToggleTag={toggleTag}
+                onToggleSector={toggleSector}
+              />
             </>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">

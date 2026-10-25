@@ -467,6 +467,8 @@ export interface components {
         From: string;
         /** @description Include news published on or before this date. */
         To: string;
+        /** @description Sort by relevance (default) or by publication date. */
+        Sort: "relevance" | "date";
         Limit: number;
         Offset: number;
         PathCompanyId: string;
@@ -892,6 +894,8 @@ export interface operations {
                 from?: components["parameters"]["From"];
                 /** @description Include news published on or before this date. */
                 to?: components["parameters"]["To"];
+                /** @description Sort by relevance (default) or by publication date. */
+                sort?: components["parameters"]["Sort"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
             };

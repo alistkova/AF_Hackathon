@@ -1,101 +1,76 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { api, eventsUrl } from "../../api/client";
 import type {
   ErrorEvent,
-  FeedFacet,
+  FeedFacets,
   FeedItem,
   Insight,
   ResultEvent,
   StepEvent,
 } from "../../api/types";
 import { formatDate } from "../../shared/format";
+import { useDebouncedValue } from "../../shared/useDebouncedValue";
 import { AnalysisPanel } from "./AnalysisPanel";
+import {
+  hasActiveFeedFilters,
+  hasInvalidFeedDateRange,
+  toApiFeedFilters,
+  type FeedFilterState,
+} from "./filters";
 
-const periodOptions = [
-  { value: "all", label: "Всё время", days: 0 },
-  { value: "90", label: "90 дней", days: 90 },
-  { value: "30", label: "30 дней", days: 30 },
-  { value: "7", label: "7 дней", days: 7 },
-];
+const feedPageSize = 30;
 
 type Props = {
   companyId: string;
+  filters: FeedFilterState;
+  onFacetsChange: (facets: FeedFacets | null) => void;
+  onResetFilters: () => void;
+  onToggleSource: (source: string) => void;
+  onToggleTag: (tag: string) => void;
+  onToggleSector: (sector: string) => void;
 };
 
-type FacetSelectProps = {
-  label: string;
-  allLabel: string;
-  value: string;
-  facets: FeedFacet[];
-  onChange: (value: string) => void;
-};
-
-function FacetSelect({ label, allLabel, value, facets, onChange }: FacetSelectProps) {
-  const hasValue = value !== "" && !facets.some((facet) => facet.value === value);
-
-  return (
-    <label className="block">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-[#ef3124]"
-      >
-        <option value="">{allLabel}</option>
-        {hasValue && <option value={value}>{value}</option>}
-        {facets.map((facet) => (
-          <option key={facet.value} value={facet.value}>
-            {facet.value} ({facet.count})
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function periodStart(period: string): string | undefined {
-  const option = periodOptions.find((item) => item.value === period);
-  if (!option || option.days === 0) {
-    return undefined;
-  }
-
-  const date = new Date();
-  date.setUTCDate(date.getUTCDate() - option.days);
-  return date.toISOString().slice(0, 10);
-}
-
-export function Feed({ companyId }: Props) {
+export function Feed({
+  companyId,
+  filters,
+  onFacetsChange,
+  onResetFilters,
+  onToggleSource,
+  onToggleTag,
+  onToggleSector,
+}: Props) {
   const sourceRef = useRef<EventSource | null>(null);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [steps, setSteps] = useState<StepEvent[]>([]);
   const [insight, setInsight] = useState<Insight | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [source, setSource] = useState("");
-  const [tag, setTag] = useState("");
-  const [period, setPeriod] = useState("all");
-  const deferredQuery = useDeferredValue(query);
-  const from = periodStart(period);
-  const hasFilters = Boolean(source || tag || period !== "all" || query.trim());
+  const debouncedQuery = useDebouncedValue(filters.query, 300);
+  const apiFilters = toApiFeedFilters(filters, debouncedQuery);
+  const dateRangeInvalid = hasInvalidFeedDateRange(filters);
+  const hasFilters = hasActiveFeedFilters(filters);
 
-  const feed = useQuery({
-    queryKey: ["feed", companyId, source, tag, deferredQuery, from],
-    queryFn: () => api.feed(companyId, { source, tag, query: deferredQuery, from }),
-    enabled: Boolean(companyId),
+  const feed = useInfiniteQuery({
+    queryKey: ["feed", companyId, apiFilters],
+    queryFn: ({ pageParam }) => api.feed(companyId, apiFilters, feedPageSize, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((total, page) => total + page.items.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
+    enabled: Boolean(companyId) && !dateRangeInvalid,
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
 
-  function resetFilters() {
-    setQuery("");
-    setSource("");
-    setTag("");
-    setPeriod("all");
-  }
+  const items = feed.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = feed.data?.pages[0]?.total ?? 0;
+  const facets = feed.data?.pages[0]?.facets ?? null;
+
+  useEffect(() => {
+    onFacetsChange(facets);
+  }, [facets, onFacetsChange]);
 
   useEffect(() => {
     return () => sourceRef.current?.close();
@@ -160,11 +135,8 @@ export function Feed({ companyId }: Props) {
     };
   }
 
-  const activeItem = feed.data?.items.find((item) => item.event_id === activeEventId);
-  const sources = feed.data?.facets.sources ?? [];
-  const tags = feed.data?.facets.tags ?? [];
-  const shown = feed.data?.items.length ?? 0;
-  const total = feed.data?.total ?? 0;
+  const activeItem = items.find((item) => item.event_id === activeEventId);
+  const shown = items.length;
   const countLabel = total > shown ? `${shown} из ${total}` : `${total} событий`;
 
   return (
@@ -191,92 +163,35 @@ export function Feed({ companyId }: Props) {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <label className="block">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Поиск
-            </span>
-            <input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Заголовок, текст или тег"
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#ef3124]"
-            />
-          </label>
-
-          <FacetSelect
-            label="Источник"
-            allLabel="Все источники"
-            value={source}
-            facets={sources}
-            onChange={setSource}
-          />
-
-          <FacetSelect
-            label="Тема"
-            allLabel="Все темы"
-            value={tag}
-            facets={tags}
-            onChange={setTag}
-          />
-
-          <label className="block">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Период
-            </span>
-            <select
-              value={period}
-              onChange={(event) => setPeriod(event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-[#ef3124]"
-            >
-              {periodOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+      {dateRangeInvalid && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+          Начало периода не может быть позже окончания.
         </div>
+      )}
 
-        <div className="mt-3 flex min-h-6 items-center justify-between gap-3">
-          <p className="text-xs text-slate-400">
-            {hasFilters ? "Фильтры применяются ко всей ленте" : "Показаны все события"}
-          </p>
-          {hasFilters && (
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="text-xs font-semibold text-[#b42318] underline decoration-red-200 underline-offset-4 hover:decoration-red-500"
-            >
-              Сбросить фильтры
-            </button>
-          )}
-        </div>
-      </div>
-
-      {feed.isLoading && (
+      {feed.isLoading && !dateRangeInvalid && (
         <div className="space-y-3">
           <div className="h-32 animate-pulse rounded-2xl bg-white/70" />
           <div className="h-32 animate-pulse rounded-2xl bg-white/70" />
         </div>
       )}
 
-      {feed.isError && (
+      {feed.isError && !dateRangeInvalid && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-          Лента недоступна. Проверьте insight-service и content-service.
+          {feed.error instanceof Error
+            ? feed.error.message
+            : "Лента недоступна. Проверьте insight-service и content-service."}
         </div>
       )}
 
-      {feed.data?.items.length === 0 && (
+      {!dateRangeInvalid && !feed.isLoading && items.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
           {hasFilters ? (
             <>
               <p>По выбранным фильтрам ничего не найдено.</p>
               <button
                 type="button"
-                onClick={resetFilters}
+                onClick={onResetFilters}
                 className="mt-3 text-sm font-semibold text-[#b42318] underline decoration-red-200 underline-offset-4 hover:decoration-red-500"
               >
                 Сбросить фильтры
@@ -288,7 +203,8 @@ export function Feed({ companyId }: Props) {
         </div>
       )}
 
-      {feed.data?.items.map((item) => {
+      {!dateRangeInvalid &&
+        items.map((item) => {
         const isActive = item.event_id === activeEventId;
         const isBusy = isActive && !insight && !error;
         return (
@@ -297,9 +213,24 @@ export function Feed({ companyId }: Props) {
             className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
           >
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-600">
-                {item.source}
-              </span>
+              {item.source ? (
+                <button
+                  type="button"
+                  onClick={() => onToggleSource(item.source)}
+                  title="Фильтровать по источнику"
+                  className={`rounded-full px-2.5 py-1 font-medium transition ${
+                    filters.sources.includes(item.source)
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {item.source}
+                </button>
+              ) : (
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-500">
+                  Без источника
+                </span>
+              )}
               <span>{formatDate(item.published_at)}</span>
               <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
                 релевантность {Math.round(item.relevance * 100)}%
@@ -324,6 +255,47 @@ export function Feed({ companyId }: Props) {
               </div>
             )}
 
+            {(item.tags.length > 0 || item.target_sectors.length > 0) && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {item.tags.map((tag) => {
+                  const active = filters.tags.includes(tag);
+                  return (
+                    <button
+                      key={`tag-${tag}`}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => onToggleTag(tag)}
+                      className={`rounded-full px-2 py-1 text-[11px] transition ${
+                        active
+                          ? "bg-slate-900 font-medium text-white"
+                          : "bg-slate-50 text-slate-500 ring-1 ring-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      #{tag}
+                    </button>
+                  );
+                })}
+                {item.target_sectors.map((sector) => {
+                  const active = filters.sectors.includes(sector);
+                  return (
+                    <button
+                      key={`sector-${sector}`}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => onToggleSector(sector)}
+                      className={`rounded-full px-2 py-1 text-[11px] transition ${
+                        active
+                          ? "bg-sky-800 font-medium text-white"
+                          : "bg-sky-50 text-sky-700 ring-1 ring-sky-100 hover:bg-sky-100"
+                      }`}
+                    >
+                      {sector}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="mt-4 flex items-center gap-3">
               <button
                 type="button"
@@ -333,14 +305,16 @@ export function Feed({ companyId }: Props) {
               >
                 {isBusy ? "Анализируем…" : "Разобрать событие"}
               </button>
-              <a
-                href={item.url}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm font-medium text-slate-500 underline decoration-slate-300 underline-offset-4 hover:text-slate-800"
-              >
-                Источник
-              </a>
+              {item.url && (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm font-medium text-slate-500 underline decoration-slate-300 underline-offset-4 hover:text-slate-800"
+                >
+                  Источник
+                </a>
+              )}
             </div>
 
             {isActive && (
@@ -351,6 +325,19 @@ export function Feed({ companyId }: Props) {
           </article>
         );
       })}
+
+      {!dateRangeInvalid && feed.hasNextPage && (
+        <div className="flex justify-center pt-2">
+          <button
+            type="button"
+            onClick={() => feed.fetchNextPage()}
+            disabled={feed.isFetchingNextPage}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+          >
+            {feed.isFetchingNextPage ? "Загружаем…" : "Показать ещё"}
+          </button>
+        </div>
+      )}
 
       {activeItem && activeItem.event_id === activeEventId && !insight && !error && (
         <p className="sr-only" aria-live="polite">
