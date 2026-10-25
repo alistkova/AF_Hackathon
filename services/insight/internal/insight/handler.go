@@ -151,6 +151,10 @@ func (h *Handler) CreateJob(c *gin.Context) {
 	}
 
 	company, err := h.company.Get(c.Request.Context(), req.CompanyID)
+	if errors.Is(err, ErrCompanyNotFound) {
+		httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
+		return
+	}
 	if err != nil {
 		httpx.Error(c, http.StatusBadGateway, "company_unavailable", "Не удалось получить профиль компании")
 		return
