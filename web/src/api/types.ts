@@ -2,6 +2,33 @@ export type User = {
   id: string;
   email: string;
   role: "admin" | "analyst";
+  primary_company_id: string;
+};
+
+export type ProfileUpdate = {
+  email?: string;
+  primary_company_id?: string;
+};
+
+export type Membership = {
+  company_id: string;
+  role: "owner" | "member";
+};
+
+export type CompanyMember = {
+  user_id: string;
+  email: string;
+  role: "owner" | "member";
+};
+
+export type CompanyCreateInput = {
+  name: string;
+  inn?: string;
+  industry?: string;
+  region?: string;
+  city?: string;
+  description?: string;
+  revenue?: string;
 };
 
 export type Company = {
@@ -11,6 +38,14 @@ export type Company = {
   industry: string;
   region: string;
   description: string;
+  group_id?: string;
+  city?: string;
+  client_type?: string;
+  revenue?: string;
+  okved_code?: string;
+  okved_name?: string;
+  products?: Record<string, string>;
+  attributes?: Record<string, string>;
   created_at: string;
 };
 

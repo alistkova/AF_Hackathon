@@ -27,10 +27,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Companies the current user may read. Admins see every company. */
+        /** @description Companies the current user belongs to. Every role, including admin, is limited to memberships. */
         get: operations["listCompanies"];
         put?: never;
-        post?: never;
+        /**
+         * @description Creates a company and makes the current user its owner. The gateway calls the company
+         *     service and then records the membership in identity; if the second step fails the
+         *     company is deleted.
+         */
+        post: operations["createCompany"];
         delete?: never;
         options?: never;
         head?: never;
@@ -45,7 +50,11 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getCompany"];
-        put?: never;
+        /**
+         * @description Updates the editable company fields. Only the company owner or a system admin may
+         *     edit a company; members receive `403`.
+         */
+        put: operations["updateCompany"];
         post?: never;
         delete?: never;
         options?: never;
@@ -80,6 +89,46 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/companies/{companyId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: components["parameters"]["PathCompanyId"];
+            };
+            cookie?: never;
+        };
+        /** @description Company roster. Available to members of the company and system admins. */
+        get: operations["listCompanyMembers"];
+        put?: never;
+        /** @description Adds an existing user to the company. Owner or system admin only. */
+        post: operations["addCompanyMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/companies/{companyId}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: components["parameters"]["PathCompanyId"];
+                userId: components["parameters"]["PathUserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Removes a member. Owner or system admin only; the last owner cannot be removed. */
+        delete: operations["removeCompanyMember"];
         options?: never;
         head?: never;
         patch?: never;
@@ -259,6 +308,41 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CompanyUpdate: {
+            name: string;
+            inn?: string;
+            industry?: string;
+            region?: string;
+            city?: string;
+            description?: string;
+            revenue?: string;
+        };
+        CompanyCreate: {
+            name: string;
+            inn?: string;
+            industry?: string;
+            region?: string;
+            city?: string;
+            description?: string;
+            revenue?: string;
+            client_type?: string;
+            okved_code?: string;
+            okved_name?: string;
+        };
+        Member: {
+            user_id: string;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            role: "owner" | "member";
+        };
+        MemberList: {
+            items: components["schemas"]["Member"][];
+        };
+        AddMember: {
+            /** Format: email */
+            email: string;
+        };
         Company: {
             id: string;
             name: string;
@@ -471,6 +555,7 @@ export interface components {
         Limit: number;
         Offset: number;
         PathCompanyId: string;
+        PathUserId: string;
         JobId: string;
     };
     requestBodies: never;
@@ -521,6 +606,49 @@ export interface operations {
             503: components["responses"]["IdentityUnavailable"];
         };
     };
+    createCompany: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyCreate"];
+            };
+        };
+        responses: {
+            /** @description Company created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Company"];
+                };
+            };
+            /** @description Invalid company data */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Company or identity service failed */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getCompany: {
         parameters: {
             query?: never;
@@ -548,6 +676,61 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            503: components["responses"]["IdentityUnavailable"];
+        };
+    };
+    updateCompany: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: components["parameters"]["PathCompanyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated company */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Company"];
+                };
+            };
+            /** @description Invalid company data */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description The current user is not an owner of the company */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Company not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
             503: components["responses"]["IdentityUnavailable"];
         };
@@ -614,6 +797,140 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            503: components["responses"]["IdentityUnavailable"];
+        };
+    };
+    listCompanyMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: components["parameters"]["PathCompanyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Company members */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Company not found or not accessible to the user */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            503: components["responses"]["IdentityUnavailable"];
+        };
+    };
+    addCompanyMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: components["parameters"]["PathCompanyId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddMember"];
+            };
+        };
+        responses: {
+            /** @description Member added or already present */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            /** @description Malformed request or invalid email */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The requester is not an owner of the company */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Company or user not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            503: components["responses"]["IdentityUnavailable"];
+        };
+    };
+    removeCompanyMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: components["parameters"]["PathCompanyId"];
+                userId: components["parameters"]["PathUserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Member removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The requester is not an owner of the company */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Company or member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The member is the last owner of the company */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
             503: components["responses"]["IdentityUnavailable"];
         };
