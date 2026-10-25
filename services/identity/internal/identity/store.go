@@ -191,6 +191,31 @@ func (m *MemStore) AddMember(_ context.Context, companyID, email string) (Member
 	return Member{UserID: userID, Email: email, Role: m.acc[userID][companyID]}, nil
 }
 
+func (m *MemStore) ownerCount(companyID string) int {
+	owners := 0
+	for _, companies := range m.acc {
+		if companies[companyID] == CompanyRoleOwner {
+			owners++
+		}
+	}
+	return owners
+}
+
+func (m *MemStore) UpdateMemberRole(_ context.Context, companyID, userID, role string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	current, ok := m.acc[userID][companyID]
+	if !ok {
+		return ErrMemberNotFound
+	}
+	if current == CompanyRoleOwner && role != CompanyRoleOwner && m.ownerCount(companyID) <= 1 {
+		return ErrLastOwner
+	}
+	m.acc[userID][companyID] = role
+	return nil
+}
+
 func (m *MemStore) RemoveMember(_ context.Context, companyID, userID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -199,16 +224,8 @@ func (m *MemStore) RemoveMember(_ context.Context, companyID, userID string) err
 	if !ok {
 		return ErrMemberNotFound
 	}
-	if role == CompanyRoleOwner {
-		owners := 0
-		for _, companies := range m.acc {
-			if companies[companyID] == CompanyRoleOwner {
-				owners++
-			}
-		}
-		if owners <= 1 {
-			return ErrLastOwner
-		}
+	if role == CompanyRoleOwner && m.ownerCount(companyID) <= 1 {
+		return ErrLastOwner
 	}
 
 	delete(m.acc[userID], companyID)
@@ -278,6 +295,9 @@ func (m *MemStore) GrantAccess(_ context.Context, userID, companyID, role string
 	if _, ok := m.users[userID]; !ok {
 		return ErrUserNotFound
 	}
+	if current, ok := m.acc[userID][companyID]; ok && current == CompanyRoleOwner && role != CompanyRoleOwner && m.ownerCount(companyID) <= 1 {
+		return ErrLastOwner
+	}
 	if m.acc[userID] == nil {
 		m.acc[userID] = map[string]string{}
 	}
@@ -289,6 +309,9 @@ func (m *MemStore) RevokeAccess(_ context.Context, userID, companyID string) err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if role, ok := m.acc[userID][companyID]; ok && role == CompanyRoleOwner && m.ownerCount(companyID) <= 1 {
+		return ErrLastOwner
+	}
 	delete(m.acc[userID], companyID)
 	if user, exists := m.users[userID]; exists && user.PrimaryCompanyID == companyID {
 		user.PrimaryCompanyID = ""

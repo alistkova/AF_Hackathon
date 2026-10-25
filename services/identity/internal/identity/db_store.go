@@ -330,9 +330,13 @@ func (d *DBStore) RemoveMember(ctx context.Context, companyID, userID string) er
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	if err := lockCompanyMemberships(ctx, tx, companyID); err != nil {
+		return err
+	}
+
 	var role string
 	err = tx.QueryRow(ctx, `
-		SELECT role FROM company_access WHERE company_id = $1 AND user_id = $2
+		SELECT role FROM company_access WHERE company_id = $1 AND user_id = $2 FOR UPDATE
 	`, companyID, userID).Scan(&role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrMemberNotFound
@@ -342,10 +346,8 @@ func (d *DBStore) RemoveMember(ctx context.Context, companyID, userID string) er
 	}
 
 	if role == CompanyRoleOwner {
-		var owners int64
-		if err := tx.QueryRow(ctx, `
-			SELECT count(*) FROM company_access WHERE company_id = $1 AND role = $2
-		`, companyID, CompanyRoleOwner).Scan(&owners); err != nil {
+		owners, err := countOwners(ctx, tx, companyID)
+		if err != nil {
 			return err
 		}
 		if owners <= 1 {
@@ -366,16 +368,66 @@ func (d *DBStore) RemoveMember(ctx context.Context, companyID, userID string) er
 	return tx.Commit(ctx)
 }
 
+func (d *DBStore) UpdateMemberRole(ctx context.Context, companyID, userID, role string) error {
+	return d.setMemberRole(ctx, userID, companyID, role, true)
+}
+
 func (d *DBStore) GrantAccess(ctx context.Context, userID, companyID, role string) error {
 	if err := d.requireUser(ctx, userID); err != nil {
 		return err
 	}
-	_, err := d.pool.Exec(ctx, `
-		INSERT INTO company_access (user_id, company_id, role)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (user_id, company_id) DO UPDATE SET role = EXCLUDED.role
-	`, userID, companyID, role)
-	return err
+	return d.setMemberRole(ctx, userID, companyID, role, false)
+}
+
+func (d *DBStore) setMemberRole(ctx context.Context, userID, companyID, role string, mustExist bool) error {
+	tx, err := d.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := lockCompanyMemberships(ctx, tx, companyID); err != nil {
+		return err
+	}
+
+	var current string
+	err = tx.QueryRow(ctx, `
+		SELECT role FROM company_access WHERE company_id = $1 AND user_id = $2 FOR UPDATE
+	`, companyID, userID).Scan(&current)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if mustExist {
+			return ErrMemberNotFound
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO company_access (user_id, company_id, role)
+			VALUES ($1, $2, $3)
+		`, userID, companyID, role); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}
+	if err != nil {
+		return err
+	}
+
+	if current == CompanyRoleOwner && role != CompanyRoleOwner {
+		owners, err := countOwners(ctx, tx, companyID)
+		if err != nil {
+			return err
+		}
+		if owners <= 1 {
+			return ErrLastOwner
+		}
+	}
+	if current == role {
+		return tx.Commit(ctx)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE company_access SET role = $3 WHERE company_id = $1 AND user_id = $2
+	`, companyID, userID, role); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (d *DBStore) RevokeAccess(ctx context.Context, userID, companyID string) error {
@@ -384,6 +436,26 @@ func (d *DBStore) RevokeAccess(ctx context.Context, userID, companyID string) er
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := lockCompanyMemberships(ctx, tx, companyID); err != nil {
+		return err
+	}
+
+	var role string
+	err = tx.QueryRow(ctx, `
+		SELECT role FROM company_access WHERE company_id = $1 AND user_id = $2 FOR UPDATE
+	`, companyID, userID).Scan(&role)
+	if err == nil && role == CompanyRoleOwner {
+		owners, err := countOwners(ctx, tx, companyID)
+		if err != nil {
+			return err
+		}
+		if owners <= 1 {
+			return ErrLastOwner
+		}
+	} else if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
 
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM company_access WHERE user_id = $1 AND company_id = $2
@@ -396,6 +468,19 @@ func (d *DBStore) RevokeAccess(ctx context.Context, userID, companyID string) er
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func lockCompanyMemberships(ctx context.Context, tx pgx.Tx, companyID string) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1)::bigint)`, companyID)
+	return err
+}
+
+func countOwners(ctx context.Context, tx pgx.Tx, companyID string) (int64, error) {
+	var owners int64
+	err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM company_access WHERE company_id = $1 AND role = $2
+	`, companyID, CompanyRoleOwner).Scan(&owners)
+	return owners, err
 }
 
 func (d *DBStore) PruneSessions(ctx context.Context) (int64, error) {

@@ -22,14 +22,19 @@ requests to it.
 - The first registered user becomes `admin`; every later registration becomes `analyst`.
   Granting and revoking company access through `/api/v1/access` requires `admin`.
 - Membership is the only source of company access. Every role, including `admin`, sees only
-  the companies in `company_access`; the admin role does not bypass company checks.
+  the companies in `company_access` in the company list; the admin role does not bypass the
+  list. System admins may read a company by id and manage its members.
 - A membership has a role, `owner` or `member`. The creator of a company becomes its owner.
-  Owners can add existing users by email and remove members; members see the roster read-only.
-  The last owner cannot be removed. System admins can manage any company.
+  Owners can add existing users by email, remove members and change their roles; members see the
+  roster read-only. The last owner cannot be removed or demoted. System admins can manage any
+  company.
 - A signed-in user can update their email and primary company and change their password.
+  The primary company must be one of the user's memberships.
 - Changing the password revokes every other session of the user; the session that performed
   the change stays valid.
 - Removing a membership clears the user's primary company when it pointed at that company.
+- `/api/v1/internal/memberships` requires the `X-Internal-Token` header matching
+  `IDENTITY_INTERNAL_TOKEN`. The gateway uses it after company creation.
 
 ## Endpoints
 
@@ -46,6 +51,7 @@ requests to it.
 | GET    | `/api/v1/me/memberships` | session       | Membership ids and roles               |
 | GET    | `/api/v1/companies/{companyId}/members` | member or admin | Company roster |
 | POST   | `/api/v1/companies/{companyId}/members` | owner or admin | Add an existing user by email |
+| PATCH  | `/api/v1/companies/{companyId}/members/{userId}` | owner or admin | Change a member role |
 | DELETE | `/api/v1/companies/{companyId}/members/{userId}` | owner or admin | Remove a member |
 | POST   | `/api/v1/access/grant`   | admin         | Grant a membership with an optional role |
 | POST   | `/api/v1/access/revoke`  | admin         | Revoke a membership                   |
@@ -79,6 +85,7 @@ network.
 | `IDENTITY_REGISTRATION_ENABLED` | `false` (the demo `.env` sets it to `true`)                            |
 | `IDENTITY_LOGIN_MAX_ATTEMPTS` | `5`                                                                        |
 | `IDENTITY_LOGIN_WINDOW`   | `15m`                                                                          |
+| `IDENTITY_INTERNAL_TOKEN` | unset (required for `/api/v1/internal/memberships`; the demo sets a value)      |
 | `SESSION_COOKIE_NAME`     | `alfa_session`                                                                 |
 | `SESSION_COOKIE_SECURE`   | `false` (set to `true` behind HTTPS)                                           |
 | `MIGRATE_ONLY`            | unset (set to `1` to apply migrations and exit)                                |

@@ -124,6 +124,10 @@ func newIdentityStubWithRoles(t *testing.T, users map[string]auth.User, access m
 		_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
 	})
 	mux.HandleFunc("/api/v1/internal/memberships", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Internal-Token") != "test-internal-token" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		if failMembership {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -138,6 +142,12 @@ func newIdentityStubWithRoles(t *testing.T, users map[string]auth.User, access m
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("/api/v1/access/grant", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("/api/v1/access/revoke", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("/api/v1/companies/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -147,6 +157,8 @@ func newIdentityStubWithRoles(t *testing.T, users map[string]auth.User, access m
 				"role":    "member",
 			})
 		case http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		case http.MethodPatch:
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{}})
@@ -197,12 +209,13 @@ func newTestRouterWith(t *testing.T, identityURL, companyURL, contentURL, insigh
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	return New(Config{
-		CompanyURL:  companyURL,
-		ContentURL:  contentURL,
-		InsightURL:  insightURL,
-		IdentityURL: identityURL,
-		CookieName:  "alfa_session",
-		Logger:      slog.New(slog.DiscardHandler),
+		CompanyURL:    companyURL,
+		ContentURL:    contentURL,
+		InsightURL:    insightURL,
+		IdentityURL:   identityURL,
+		InternalToken: "test-internal-token",
+		CookieName:    "alfa_session",
+		Logger:        slog.New(slog.DiscardHandler),
 	})
 }
 
@@ -308,8 +321,8 @@ func TestAdminWithGrantsIsFiltered(t *testing.T) {
 	}
 
 	response = request(t, router, "/api/v1/companies/sber", "admin-token", "")
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("forbidden company status = %d, want %d", response.Code, http.StatusNotFound)
+	if response.Code != http.StatusOK {
+		t.Fatalf("admin detail status = %d, want %d", response.Code, http.StatusOK)
 	}
 }
 
@@ -832,6 +845,50 @@ func TestAddCompanyMemberProxies(t *testing.T) {
 	}
 }
 
+func TestUpdateCompanyMemberProxies(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	companyRecorder := &companyRecorder{}
+	company := newCompanyStub(t, companyRecorder)
+	router := newTestRouter(t, identity.URL, company.URL)
+
+	response := requestJSON(t, router, http.MethodPatch, "/api/v1/companies/magnit/members/usr_member", `{"role":"owner"}`, "analyst-token")
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d body %s", response.Code, http.StatusNoContent, response.Body.String())
+	}
+}
+
+func TestGrantAccessValidatesCompany(t *testing.T) {
+	users, access := fixture()
+	identity := newIdentityStub(t, users, access)
+	recorder := &companyRecorder{}
+	company := newCompanyStub(t, recorder)
+	router := newTestRouter(t, identity.URL, company.URL)
+
+	response := requestJSON(t, router, http.MethodPost, "/api/v1/access/grant",
+		`{"user_id":"usr_analyst","company_id":"magnit","role":"owner"}`, "admin-token")
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d body %s", response.Code, http.StatusNoContent, response.Body.String())
+	}
+
+	response = requestJSON(t, router, http.MethodPost, "/api/v1/access/grant",
+		`{"user_id":"usr_analyst","company_id":"magnit","role":"owner"}`, "analyst-token")
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("non-admin status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+
+	missing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(missing.Close)
+	missingRouter := newTestRouter(t, identity.URL, missing.URL)
+	response = requestJSON(t, missingRouter, http.MethodPost, "/api/v1/access/grant",
+		`{"user_id":"usr_analyst","company_id":"missing","role":"owner"}`, "admin-token")
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("missing company status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+}
+
 func TestCreateCompanyPropagatesValidationError(t *testing.T) {
 	users, access := fixture()
 	identity := newIdentityStub(t, users, access)
@@ -866,7 +923,7 @@ func TestOwnerCanUpdateCompany(t *testing.T) {
 		t.Fatalf("status = %d, want %d body %s", response.Code, http.StatusOK, response.Body.String())
 	}
 	calls := recorder.snapshot()
-	if len(calls) != 1 || calls[0].method != http.MethodPut || calls[0].path != "/api/v1/companies/magnit" {
+	if len(calls) != 2 || calls[0].method != http.MethodGet || calls[1].method != http.MethodPut || calls[1].path != "/api/v1/companies/magnit" {
 		t.Fatalf("company calls = %+v", calls)
 	}
 }
@@ -883,8 +940,8 @@ func TestMemberCannotUpdateCompany(t *testing.T) {
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
 	}
-	if calls := recorder.snapshot(); len(calls) != 0 {
-		t.Fatalf("company calls = %+v, want none", calls)
+	if calls := recorder.snapshot(); len(calls) != 1 || calls[0].method != http.MethodGet {
+		t.Fatalf("company calls = %+v, want only the existence check", calls)
 	}
 }
 

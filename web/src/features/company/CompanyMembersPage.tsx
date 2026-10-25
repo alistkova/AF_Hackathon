@@ -47,6 +47,14 @@ export function CompanyMembersPage({ companyId, user, onOpenCompany }: Props) {
       await invalidate();
     },
   });
+  const updateRole = useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: "owner" | "member" }) =>
+      api.updateCompanyMember(companyId, userId, role),
+    onSuccess: async () => {
+      setNotice("Роль обновлена");
+      await invalidate();
+    },
+  });
 
   const items = members.data?.items ?? [];
   const isOwner =
@@ -152,6 +160,21 @@ export function CompanyMembersPage({ companyId, user, onOpenCompany }: Props) {
                     >
                       {member.role === "owner" ? "Владелец" : "Участник"}
                     </span>
+                    {isOwner && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateRole.mutate({
+                            userId: member.user_id,
+                            role: member.role === "owner" ? "member" : "owner",
+                          })
+                        }
+                        disabled={updateRole.isPending}
+                        className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {member.role === "owner" ? "Сделать участником" : "Сделать владельцем"}
+                      </button>
+                    )}
                     {isOwner && member.role !== "owner" && (
                       <button
                         type="button"
@@ -208,11 +231,18 @@ export function CompanyMembersPage({ companyId, user, onOpenCompany }: Props) {
                   {remove.error instanceof Error ? remove.error.message : "Не удалось удалить участника"}
                 </p>
               )}
+              {updateRole.isError && (
+                <p className="mt-3 text-sm text-red-600">
+                  {updateRole.error instanceof Error
+                    ? updateRole.error.message
+                    : "Не удалось изменить роль участника"}
+                </p>
+              )}
               {notice && <p className="mt-3 text-sm text-emerald-600">{notice}</p>}
             </section>
           ) : (
             <p className="rounded-xl bg-slate-100 p-4 text-sm text-slate-500">
-              Добавлять и удалять участников может только владелец компании.
+              Добавлять, удалять и менять роли участников может только владелец компании.
             </p>
           )}
         </>

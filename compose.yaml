@@ -32,6 +32,7 @@ x-identity-env: &identity-env
   IDENTITY_LOGIN_WINDOW: ${IDENTITY_LOGIN_WINDOW:-15m}
   SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-alfa_session}
   SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+  IDENTITY_INTERNAL_TOKEN: ${IDENTITY_INTERNAL_TOKEN:-dev-internal-token}
 
 services:
   postgres:
@@ -190,6 +191,7 @@ services:
       CONTENT_URL: http://content:8082
       INSIGHT_URL: http://insight:8083
       IDENTITY_URL: http://identity:8086
+      IDENTITY_INTERNAL_TOKEN: ${IDENTITY_INTERNAL_TOKEN:-dev-internal-token}
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-alfa_session}
     depends_on:
       company:

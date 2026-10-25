@@ -12,6 +12,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const maxRequestBytes = 64 << 10
+
 type Store interface {
 	List(ctx context.Context, ids []string) ([]Company, error)
 	Get(ctx context.Context, id string) (Company, error)
@@ -81,6 +83,7 @@ func (h *Handler) Get(c *gin.Context) {
 }
 
 func (h *Handler) Create(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestBytes)
 	var req createCompanyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpx.Error(c, http.StatusBadRequest, "invalid_request", "Некорректный запрос")
@@ -92,7 +95,13 @@ func (h *Handler) Create(c *gin.Context) {
 		httpx.Error(c, http.StatusBadRequest, "invalid_company", problem)
 		return
 	}
-	item.ID = newCompanyID()
+	id, err := newCompanyID()
+	if err != nil {
+		h.logger.Error("generate company id", "error", err)
+		httpx.Error(c, http.StatusInternalServerError, "company_unavailable", "Не удалось создать компанию")
+		return
+	}
+	item.ID = id
 
 	created, err := h.repo.Create(c.Request.Context(), item)
 	if err != nil {
@@ -104,6 +113,7 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 func (h *Handler) Update(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestBytes)
 	var req createCompanyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpx.Error(c, http.StatusBadRequest, "invalid_request", "Некорректный запрос")
@@ -188,12 +198,12 @@ func digitsOnly(value string) bool {
 	return true
 }
 
-func newCompanyID() string {
+func newCompanyID() (string, error) {
 	buf := make([]byte, 8)
 	if _, err := rand.Read(buf); err != nil {
-		panic(err)
+		return "", err
 	}
-	return "cmp_" + hex.EncodeToString(buf)
+	return "cmp_" + hex.EncodeToString(buf), nil
 }
 
 func (h *Handler) Delete(c *gin.Context) {

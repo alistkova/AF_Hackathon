@@ -20,12 +20,13 @@ func main() {
 	defer stop()
 
 	router := server.New(server.Config{
-		CompanyURL:  config.String("COMPANY_URL", "http://localhost:8081"),
-		ContentURL:  config.String("CONTENT_URL", "http://localhost:8082"),
-		InsightURL:  config.String("INSIGHT_URL", "http://localhost:8083"),
-		IdentityURL: config.String("IDENTITY_URL", "http://localhost:8086"),
-		CookieName:  config.String("SESSION_COOKIE_NAME", "alfa_session"),
-		Logger:      logger,
+		CompanyURL:    config.String("COMPANY_URL", "http://localhost:8081"),
+		ContentURL:    config.String("CONTENT_URL", "http://localhost:8082"),
+		InsightURL:    config.String("INSIGHT_URL", "http://localhost:8083"),
+		IdentityURL:   config.String("IDENTITY_URL", "http://localhost:8086"),
+		InternalToken: config.String("IDENTITY_INTERNAL_TOKEN", ""),
+		CookieName:    config.String("SESSION_COOKIE_NAME", "alfa_session"),
+		Logger:        logger,
 	})
 
 	httpServer := &http.Server{

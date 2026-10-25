@@ -73,6 +73,9 @@ paths:
   /api/v1/companies/{companyId}:
     get:
       operationId: getCompany
+      description: |
+        Company profile. Members see the companies they belong to; system admins may read any
+        company by id so they can manage it, but the company list stays membership-filtered.
       security:
         - sessionCookie: []
       parameters:
@@ -249,6 +252,46 @@ paths:
     parameters:
       - $ref: "#/components/parameters/PathCompanyId"
       - $ref: "#/components/parameters/PathUserId"
+    patch:
+      operationId: updateCompanyMemberRole
+      description: Changes a member role. Owner or system admin only; the last owner cannot be demoted.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberRoleUpdate"
+      responses:
+        "204":
+          description: Role updated
+        "400":
+          description: Malformed request or invalid role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: The requester is not an owner of the company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Company or member not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The member is the last owner of the company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          $ref: "#/components/responses/IdentityUnavailable"
     delete:
       operationId: removeCompanyMember
       description: Removes a member. Owner or system admin only; the last owner cannot be removed.
@@ -530,7 +573,7 @@ paths:
                   facets:
                     $ref: "#/components/schemas/FeedFacets"
         "400":
-          description: company_id is missing or pagination is invalid
+          description: company_id is missing or pagination, filter or sort values are invalid
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -794,6 +837,13 @@ components:
           type: string
           format: email
           maxLength: 254
+    MemberRoleUpdate:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [owner, member]
     Company:
       type: object
       required: [id, name]

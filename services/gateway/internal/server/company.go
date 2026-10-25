@@ -77,6 +77,27 @@ func (c *companyClient) Create(ctx context.Context, body []byte) (json.RawMessag
 	return c.write(ctx, http.MethodPost, "/api/v1/companies", body, http.StatusCreated)
 }
 
+func (c *companyClient) Exists(ctx context.Context, id string) (bool, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/companies/"+url.PathEscape(id), nil)
+	if err != nil {
+		return false, err
+	}
+	request.Header.Set("Accept", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return false, fmt.Errorf("call company get: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	switch response.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	default:
+		return false, fmt.Errorf("company get returned %d", response.StatusCode)
+	}
+}
+
 func (c *companyClient) Update(ctx context.Context, id string, body []byte) (json.RawMessage, error) {
 	return c.write(ctx, http.MethodPut, "/api/v1/companies/"+url.PathEscape(id), body, http.StatusOK)
 }
@@ -134,22 +155,29 @@ func (g *guard) createCompany(c *gin.Context) {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(raw, &payload); err != nil || strings.TrimSpace(payload.ID) == "" {
-		if payload.ID != "" {
-			_ = g.companies.Delete(c.Request.Context(), payload.ID)
-		}
+		g.rollbackCompany(c, payload.ID)
 		g.logger.Error("decode created company", "error", err, "request_id", c.GetString("request_id"))
 		httpx.Error(c, http.StatusBadGateway, "company_unavailable", "Не удалось создать компанию")
 		return
 	}
 
 	if err := g.identity.AddMembership(c.Request.Context(), user.ID, payload.ID, "owner"); err != nil {
-		_ = g.companies.Delete(c.Request.Context(), payload.ID)
+		g.rollbackCompany(c, payload.ID)
 		g.logger.Error("grant company ownership", "error", err, "request_id", c.GetString("request_id"))
 		httpx.Error(c, http.StatusBadGateway, "identity_unavailable", "Не удалось создать компанию")
 		return
 	}
 
 	c.Data(http.StatusCreated, "application/json", raw)
+}
+
+func (g *guard) rollbackCompany(c *gin.Context, id string) {
+	if strings.TrimSpace(id) == "" {
+		return
+	}
+	if err := g.companies.Delete(c.Request.Context(), id); err != nil {
+		g.logger.Error("rollback company", "error", err, "company_id", id, "request_id", c.GetString("request_id"))
+	}
 }
 
 func (g *guard) updateCompany(c *gin.Context) {

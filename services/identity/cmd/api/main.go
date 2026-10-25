@@ -88,6 +88,7 @@ func main() {
 	protected.GET("/me/memberships", handler.Memberships)
 	protected.GET("/companies/:companyId/members", handler.CompanyMembers)
 	protected.POST("/companies/:companyId/members", handler.AddCompanyMember)
+	protected.PATCH("/companies/:companyId/members/:userId", handler.UpdateCompanyMember)
 	protected.DELETE("/companies/:companyId/members/:userId", handler.RemoveCompanyMember)
 	admin := protected.Group("/access")
 	admin.Use(identity.RequireAdmin())
@@ -95,6 +96,7 @@ func main() {
 	admin.POST("/revoke", handler.RevokeAccess)
 
 	internal := v1.Group("/internal")
+	internal.Use(identity.RequireInternalToken(config.String("IDENTITY_INTERNAL_TOKEN", "")))
 	internal.POST("/memberships", handler.CreateMembership)
 
 	server := &http.Server{

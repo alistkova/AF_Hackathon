@@ -49,6 +49,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * @description Company profile. Members see the companies they belong to; system admins may read any
+         *     company by id so they can manage it, but the company list stays membership-filtered.
+         */
         get: operations["getCompany"];
         /**
          * @description Updates the editable company fields. Only the company owner or a system admin may
@@ -131,7 +135,8 @@ export interface paths {
         delete: operations["removeCompanyMember"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** @description Changes a member role. Owner or system admin only; the last owner cannot be demoted. */
+        patch: operations["updateCompanyMemberRole"];
         trace?: never;
     };
     "/api/v1/news": {
@@ -342,6 +347,10 @@ export interface components {
         AddMember: {
             /** Format: email */
             email: string;
+        };
+        MemberRoleUpdate: {
+            /** @enum {string} */
+            role: "owner" | "member";
         };
         Company: {
             id: string;
@@ -935,6 +944,68 @@ export interface operations {
             503: components["responses"]["IdentityUnavailable"];
         };
     };
+    updateCompanyMemberRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                companyId: components["parameters"]["PathCompanyId"];
+                userId: components["parameters"]["PathUserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberRoleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Role updated */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Malformed request or invalid role */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The requester is not an owner of the company */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Company or member not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The member is the last owner of the company */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            503: components["responses"]["IdentityUnavailable"];
+        };
+    };
     listNews: {
         parameters: {
             query?: {
@@ -1234,7 +1305,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description company_id is missing or pagination is invalid */
+            /** @description company_id is missing or pagination, filter or sort values are invalid */
             400: {
                 headers: {
                     [name: string]: unknown;

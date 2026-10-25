@@ -43,9 +43,11 @@ func newTestRouter(store Store) *gin.Engine {
 	protected.GET("/me/memberships", handler.Memberships)
 	protected.GET("/companies/:companyId/members", handler.CompanyMembers)
 	protected.POST("/companies/:companyId/members", handler.AddCompanyMember)
+	protected.PATCH("/companies/:companyId/members/:userId", handler.UpdateCompanyMember)
 	protected.DELETE("/companies/:companyId/members/:userId", handler.RemoveCompanyMember)
 
 	internal := v1.Group("/internal")
+	internal.Use(RequireInternalToken(testInternalToken))
 	internal.POST("/memberships", handler.CreateMembership)
 
 	admin := protected.Group("/access")
@@ -54,6 +56,29 @@ func newTestRouter(store Store) *gin.Engine {
 	admin.POST("/revoke", handler.RevokeAccess)
 
 	return router
+}
+
+const testInternalToken = "test-internal-token"
+
+func performWithHeaders(router *gin.Engine, method, path, body string, headers map[string]string) *httptest.ResponseRecorder {
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, path, reader)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func performInternal(router *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
+	return performWithHeaders(router, method, path, body, map[string]string{internalTokenHeader: testInternalToken})
 }
 
 func perform(router *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
@@ -428,10 +453,21 @@ func TestUpdateProfileRejectsInvalidInput(t *testing.T) {
 
 func TestUpdatePrimaryCompany(t *testing.T) {
 	router := newTestRouter(NewMemStore())
-	registerUser(t, router, "user@example.com", "secret-pass")
+	user := registerUser(t, router, "user@example.com", "secret-pass")
 	session := loginUser(t, router, "user@example.com", "secret-pass")
 
 	rec := performWithToken(router, http.MethodPatch, "/api/v1/me", `{"primary_company_id":"magnit"}`, session.Token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("non-member status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	rec = performWithToken(router, http.MethodPost, "/api/v1/access/grant",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"magnit","role":"member"}`, user.ID), session.Token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("grant status %d, want %d", rec.Code, http.StatusNoContent)
+	}
+
+	rec = performWithToken(router, http.MethodPatch, "/api/v1/me", `{"primary_company_id":"magnit"}`, session.Token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d, want %d", rec.Code, http.StatusOK)
 	}
@@ -665,12 +701,112 @@ func TestRemoveMemberClearsPrimary(t *testing.T) {
 	}
 }
 
+func TestUpdateMemberRole(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "admin@example.com", "secret-pass")
+	owner := registerUser(t, router, "owner@example.com", "secret-pass")
+	member := registerUser(t, router, "member@example.com", "secret-pass")
+	other := registerUser(t, router, "other@example.com", "secret-pass")
+	adminSession := loginUser(t, router, "admin@example.com", "secret-pass")
+	ownerSession := loginUser(t, router, "owner@example.com", "secret-pass")
+	memberSession := loginUser(t, router, "member@example.com", "secret-pass")
+
+	for _, grant := range []struct {
+		userID string
+		role   string
+	}{
+		{owner.ID, CompanyRoleOwner},
+		{member.ID, CompanyRoleMember},
+		{other.ID, CompanyRoleMember},
+	} {
+		body := fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":%q}`, grant.userID, grant.role)
+		rec := performWithToken(router, http.MethodPost, "/api/v1/access/grant", body, adminSession.Token)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("grant %s status %d", grant.role, rec.Code)
+		}
+	}
+
+	rec := performWithToken(router, http.MethodPatch, "/api/v1/companies/c1/members/"+other.ID,
+		`{"role":"owner"}`, memberSession.Token)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("member promote status %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = performWithToken(router, http.MethodPatch, "/api/v1/companies/c1/members/"+member.ID,
+		`{"role":"owner"}`, ownerSession.Token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("promote status %d, want %d body %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	rec = performWithToken(router, http.MethodPatch, "/api/v1/companies/c1/members/"+owner.ID,
+		`{"role":"member"}`, memberSession.Token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("demote owner status %d, want %d body %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	rec = performWithToken(router, http.MethodPatch, "/api/v1/companies/c1/members/"+member.ID,
+		`{"role":"member"}`, memberSession.Token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("demote last owner status %d, want %d", rec.Code, http.StatusConflict)
+	}
+
+	rec = performWithToken(router, http.MethodPatch, "/api/v1/companies/c1/members/"+member.ID,
+		`{"role":"bad"}`, memberSession.Token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid role status %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+
+	rec = performWithToken(router, http.MethodPatch, "/api/v1/companies/c1/members/missing",
+		`{"role":"member"}`, memberSession.Token)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing member status %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestCannotRemoveOrDemoteLastOwner(t *testing.T) {
+	router := newTestRouter(NewMemStore())
+	registerUser(t, router, "admin@example.com", "secret-pass")
+	owner := registerUser(t, router, "owner@example.com", "secret-pass")
+	adminSession := loginUser(t, router, "admin@example.com", "secret-pass")
+
+	rec := performWithToken(router, http.MethodPost, "/api/v1/access/grant",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"owner"}`, owner.ID), adminSession.Token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("grant owner status %d", rec.Code)
+	}
+
+	rec = performWithToken(router, http.MethodPost, "/api/v1/access/grant",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"member"}`, owner.ID), adminSession.Token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("demote last owner status %d, want %d", rec.Code, http.StatusConflict)
+	}
+
+	rec = performWithToken(router, http.MethodPost, "/api/v1/access/revoke",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1"}`, owner.ID), adminSession.Token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("revoke last owner status %d, want %d", rec.Code, http.StatusConflict)
+	}
+}
+
 func TestInternalMembership(t *testing.T) {
 	router := newTestRouter(NewMemStore())
 	registerUser(t, router, "owner@example.com", "secret-pass")
 	user := registerUser(t, router, "analyst@example.com", "secret-pass")
 
 	rec := perform(router, http.MethodPost, "/api/v1/internal/memberships",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"owner"}`, user.ID))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("missing token status %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = performWithHeaders(router, http.MethodPost, "/api/v1/internal/memberships",
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"owner"}`, user.ID),
+		map[string]string{internalTokenHeader: "wrong-token"})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("wrong token status %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = performInternal(router, http.MethodPost, "/api/v1/internal/memberships",
 		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"owner"}`, user.ID))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status %d, want %d body %s", rec.Code, http.StatusNoContent, rec.Body.String())
@@ -688,7 +824,7 @@ func TestInternalMembership(t *testing.T) {
 		t.Fatalf("memberships = %+v, want c1 owner", memberships.Items)
 	}
 
-	rec = perform(router, http.MethodPost, "/api/v1/internal/memberships",
+	rec = performInternal(router, http.MethodPost, "/api/v1/internal/memberships",
 		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"bad"}`, user.ID))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("invalid role status %d, want %d", rec.Code, http.StatusBadRequest)
@@ -703,7 +839,7 @@ func TestRevokeClearsPrimary(t *testing.T) {
 	userSession := loginUser(t, router, "analyst@example.com", "secret-pass")
 
 	rec := performWithToken(router, http.MethodPost, "/api/v1/access/grant",
-		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"owner"}`, user.ID), adminSession.Token)
+		fmt.Sprintf(`{"user_id":%q,"company_id":"c1","role":"member"}`, user.ID), adminSession.Token)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("grant status %d", rec.Code)
 	}

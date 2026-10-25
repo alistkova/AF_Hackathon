@@ -195,6 +195,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "429":
+          description: Too many wrong current-password attempts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/v1/me/companies:
@@ -304,6 +310,50 @@ paths:
     parameters:
       - $ref: "#/components/parameters/CompanyId"
       - $ref: "#/components/parameters/UserId"
+    patch:
+      operationId: updateCompanyMemberRole
+      description: |
+        Changes the membership role. The requester must be an owner of the company or a
+        system admin. The last owner cannot be demoted.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemberRoleUpdate"
+      responses:
+        "204":
+          description: Role updated
+        "400":
+          description: Malformed request or invalid role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The requester is not an owner of the company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Company or member not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The member is the last owner of the company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
     delete:
       operationId: removeCompanyMember
       description: |
@@ -342,7 +392,14 @@ paths:
       operationId: createMembership
       description: |
         Internal service endpoint used by the gateway after company creation. It records the
-        creator as the company owner. It is not routed through the public gateway.
+        creator as the company owner. It is not routed through the public gateway and
+        requires the `IDENTITY_INTERNAL_TOKEN` shared secret.
+      parameters:
+        - name: X-Internal-Token
+          in: header
+          required: true
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -354,6 +411,12 @@ paths:
           description: Membership stored
         "400":
           description: Malformed request or invalid role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Missing or invalid internal token
           content:
             application/json:
               schema:
@@ -403,12 +466,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "409":
+          description: The change would demote the last owner of the company
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
   /api/v1/access/revoke:
     post:
       operationId: revokeCompanyAccess
-      description: Revokes a user's access to a company. Admin only.
+      description: |
+        Revokes a user's access to a company. Admin only. The last owner of a company
+        cannot be revoked.
       security:
         - sessionCookie: []
       requestBody:
@@ -430,6 +501,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           description: Current user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: The membership is the last owner of the company
           content:
             application/json:
               schema:
@@ -509,7 +586,7 @@ components:
         primary_company_id:
           type: string
           maxLength: 128
-          description: Empty string clears the selection.
+          description: Empty string clears the selection; otherwise the user must be a member.
     PasswordChange:
       type: object
       required: [current_password, new_password]
@@ -549,6 +626,13 @@ components:
         role:
           type: string
           enum: [owner, member]
+    MemberRoleUpdate:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [owner, member]
     MemberList:
       type: object
       required: [items]
@@ -567,7 +651,7 @@ components:
           maxLength: 254
     MembershipInput:
       type: object
-      required: [user_id, company_id, role]
+      required: [user_id, company_id]
       properties:
         user_id:
           type: string
@@ -578,6 +662,7 @@ components:
         role:
           type: string
           enum: [owner, member]
+          default: member
     Session:
       type: object
       required: [token, expires_at, user]

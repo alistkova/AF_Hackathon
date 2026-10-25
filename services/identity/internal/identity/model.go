@@ -25,6 +25,7 @@ type Store interface {
 	Members(ctx context.Context, companyID string) ([]Member, error)
 	MemberRole(ctx context.Context, companyID, userID string) (string, error)
 	AddMember(ctx context.Context, companyID, email string) (Member, error)
+	UpdateMemberRole(ctx context.Context, companyID, userID, role string) error
 	RemoveMember(ctx context.Context, companyID, userID string) error
 	GrantAccess(ctx context.Context, userID, companyID, role string) error
 	RevokeAccess(ctx context.Context, userID, companyID string) error
@@ -61,13 +62,25 @@ type Session struct {
 }
 
 type Handler struct {
-	store   Store
-	limiter *loginLimiter
-	logger  *slog.Logger
+	store     Store
+	limiter   *loginLimiter
+	passwords *loginLimiter
+	logger    *slog.Logger
 }
 
 func NewHandler(store Store, logger *slog.Logger) *Handler {
-	return &Handler{store: store, limiter: newLoginLimiter(), logger: logger}
+	return &Handler{
+		store:     store,
+		limiter:   newLoginLimiter(),
+		passwords: newLoginLimiter(),
+		logger:    logger,
+	}
+}
+
+const maxRequestBody = 64 << 10
+
+func limitBody(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestBody)
 }
 
 type credentialsRequest struct {
@@ -76,6 +89,7 @@ type credentialsRequest struct {
 }
 
 func (h *Handler) Register(c *gin.Context) {
+	limitBody(c)
 	if !registrationEnabled() {
 		httpx.Error(c, http.StatusForbidden, "registration_disabled", "Регистрация отключена")
 		return
@@ -104,6 +118,7 @@ func (h *Handler) Register(c *gin.Context) {
 }
 
 func (h *Handler) Login(c *gin.Context) {
+	limitBody(c)
 	var req credentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		httpx.Error(c, http.StatusBadRequest, "invalid_request", "Укажите email и пароль")
@@ -153,6 +168,7 @@ func (h *Handler) Me(c *gin.Context) {
 }
 
 func (h *Handler) UpdateMe(c *gin.Context) {
+	limitBody(c)
 	var req struct {
 		Email            *string `json:"email"`
 		PrimaryCompanyID *string `json:"primary_company_id"`
@@ -166,6 +182,7 @@ func (h *Handler) UpdateMe(c *gin.Context) {
 		return
 	}
 
+	userID := c.GetString("userID")
 	input := ProfileUpdate{}
 	if req.Email != nil {
 		email, err := validateEmail(*req.Email)
@@ -181,10 +198,19 @@ func (h *Handler) UpdateMe(c *gin.Context) {
 			httpx.Error(c, http.StatusBadRequest, "invalid_company", "Некорректный идентификатор компании")
 			return
 		}
+		if companyID != "" {
+			if _, err := h.store.MemberRole(c.Request.Context(), companyID, userID); errors.Is(err, ErrMemberNotFound) {
+				httpx.Error(c, http.StatusBadRequest, "invalid_company", "Вы не являетесь участником компании")
+				return
+			} else if err != nil {
+				h.internal(c, "resolve primary company", err)
+				return
+			}
+		}
 		input.PrimaryCompanyID = &companyID
 	}
 
-	user, err := h.store.UpdateProfile(c.Request.Context(), c.GetString("userID"), input)
+	user, err := h.store.UpdateProfile(c.Request.Context(), userID, input)
 	switch {
 	case errors.Is(err, ErrEmailExists):
 		httpx.Error(c, http.StatusConflict, "email_exists", "Пользователь с таким email уже существует")
@@ -200,6 +226,7 @@ func (h *Handler) UpdateMe(c *gin.Context) {
 }
 
 func (h *Handler) ChangePassword(c *gin.Context) {
+	limitBody(c)
 	var req struct {
 		CurrentPassword string `json:"current_password" binding:"required"`
 		NewPassword     string `json:"new_password" binding:"required"`
@@ -213,8 +240,20 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	err := h.store.ChangePassword(c.Request.Context(), c.GetString("userID"), c.GetString("token"), req.CurrentPassword, req.NewPassword)
+	userID := c.GetString("userID")
+	if ok, wait := h.passwords.allow(userID); !ok {
+		seconds := int(wait.Seconds())
+		if seconds < 1 {
+			seconds = 1
+		}
+		c.Header("Retry-After", strconv.Itoa(seconds))
+		httpx.Error(c, http.StatusTooManyRequests, "too_many_attempts", "Слишком много попыток смены пароля, попробуйте позже")
+		return
+	}
+
+	err := h.store.ChangePassword(c.Request.Context(), userID, c.GetString("token"), req.CurrentPassword, req.NewPassword)
 	if errors.Is(err, ErrInvalidCredentials) {
+		h.passwords.fail(userID)
 		httpx.Error(c, http.StatusBadRequest, "invalid_current_password", "Текущий пароль неверен")
 		return
 	}
@@ -222,6 +261,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 		h.internal(c, "change password", err)
 		return
 	}
+	h.passwords.reset(userID)
 	c.Status(http.StatusNoContent)
 }
 
@@ -249,6 +289,7 @@ func (h *Handler) CompanyMembers(c *gin.Context) {
 }
 
 func (h *Handler) AddCompanyMember(c *gin.Context) {
+	limitBody(c)
 	companyID := strings.TrimSpace(c.Param("companyId"))
 	if _, ok := h.requireCompanyRole(c, companyID, CompanyRoleOwner); !ok {
 		return
@@ -277,6 +318,40 @@ func (h *Handler) AddCompanyMember(c *gin.Context) {
 	c.JSON(http.StatusOK, member)
 }
 
+func (h *Handler) UpdateCompanyMember(c *gin.Context) {
+	limitBody(c)
+	companyID := strings.TrimSpace(c.Param("companyId"))
+	if _, ok := h.requireCompanyRole(c, companyID, CompanyRoleOwner); !ok {
+		return
+	}
+
+	var req struct {
+		Role string `json:"role" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Error(c, http.StatusBadRequest, "invalid_request", "Укажите роль участника")
+		return
+	}
+	if !validCompanyRole(req.Role) {
+		httpx.Error(c, http.StatusBadRequest, "invalid_role", "Некорректная роль")
+		return
+	}
+
+	err := h.store.UpdateMemberRole(c.Request.Context(), companyID, strings.TrimSpace(c.Param("userId")), req.Role)
+	switch {
+	case errors.Is(err, ErrMemberNotFound):
+		httpx.Error(c, http.StatusNotFound, "member_not_found", "Участник не найден")
+		return
+	case errors.Is(err, ErrLastOwner):
+		httpx.Error(c, http.StatusConflict, "last_owner", "Нельзя понизить единственного владельца компании")
+		return
+	case err != nil:
+		h.internal(c, "update company member", err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *Handler) RemoveCompanyMember(c *gin.Context) {
 	companyID := strings.TrimSpace(c.Param("companyId"))
 	if _, ok := h.requireCompanyRole(c, companyID, CompanyRoleOwner); !ok {
@@ -299,6 +374,7 @@ func (h *Handler) RemoveCompanyMember(c *gin.Context) {
 }
 
 func (h *Handler) CreateMembership(c *gin.Context) {
+	limitBody(c)
 	var req struct {
 		UserID    string `json:"user_id" binding:"required"`
 		CompanyID string `json:"company_id" binding:"required"`
@@ -319,6 +395,10 @@ func (h *Handler) CreateMembership(c *gin.Context) {
 	err := h.store.GrantAccess(c.Request.Context(), req.UserID, req.CompanyID, req.Role)
 	if errors.Is(err, ErrUserNotFound) {
 		httpx.Error(c, http.StatusNotFound, "user_not_found", "Пользователь не найден")
+		return
+	}
+	if errors.Is(err, ErrLastOwner) {
+		httpx.Error(c, http.StatusConflict, "last_owner", "Нельзя понизить единственного владельца компании")
 		return
 	}
 	if err != nil {
@@ -363,6 +443,7 @@ func (h *Handler) AccessibleCompanies(c *gin.Context) {
 }
 
 func (h *Handler) GrantAccess(c *gin.Context) {
+	limitBody(c)
 	var req struct {
 		UserID    string `json:"user_id" binding:"required"`
 		CompanyID string `json:"company_id" binding:"required"`
@@ -385,6 +466,10 @@ func (h *Handler) GrantAccess(c *gin.Context) {
 		httpx.Error(c, http.StatusNotFound, "user_not_found", "Пользователь не найден")
 		return
 	}
+	if errors.Is(err, ErrLastOwner) {
+		httpx.Error(c, http.StatusConflict, "last_owner", "Нельзя понизить единственного владельца компании")
+		return
+	}
 	if err != nil {
 		h.internal(c, "grant company access", err)
 		return
@@ -393,6 +478,7 @@ func (h *Handler) GrantAccess(c *gin.Context) {
 }
 
 func (h *Handler) RevokeAccess(c *gin.Context) {
+	limitBody(c)
 	var req struct {
 		UserID    string `json:"user_id" binding:"required"`
 		CompanyID string `json:"company_id" binding:"required"`
@@ -403,6 +489,10 @@ func (h *Handler) RevokeAccess(c *gin.Context) {
 	}
 
 	if err := h.store.RevokeAccess(c.Request.Context(), req.UserID, req.CompanyID); err != nil {
+		if errors.Is(err, ErrLastOwner) {
+			httpx.Error(c, http.StatusConflict, "last_owner", "Нельзя удалить единственного владельца компании")
+			return
+		}
 		h.internal(c, "revoke company access", err)
 		return
 	}

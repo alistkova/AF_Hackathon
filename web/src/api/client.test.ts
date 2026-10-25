@@ -195,6 +195,28 @@ describe("profile api", () => {
     expect(removeUrl).toBe("/api/v1/companies/magnit/members/usr_2");
     expect(removeInit?.method).toBe("DELETE");
   });
+
+  it("changes a member role", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.updateCompanyMember("magnit", "usr_2", "owner");
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/v1/companies/magnit/members/usr_2");
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(init?.body as string)).toEqual({ role: "owner" });
+  });
+
+  it("encodes company and member ids", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.removeCompanyMember("cmp/1", "usr 2");
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/v1/companies/cmp%2F1/members/usr%202");
+  });
 });
 
 describe("api.createJob", () => {
