@@ -37,21 +37,32 @@ describe("api.feed", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await api.feed("magnit", {
-      source: "Ведомости",
-      tag: "ритейл",
-      query: "логистика",
-      from: "2026-09-01",
-    });
+    await api.feed(
+      "magnit",
+      {
+        sources: ["Ведомости", "РБК"],
+        tags: ["ритейл"],
+        sectors: ["Торговля"],
+        query: "логистика",
+        from: "2026-09-01",
+        sort: "date",
+      },
+      10,
+      20,
+    );
 
     const [url] = fetchMock.mock.calls[0];
     const parsed = new URL(url as string, "http://localhost");
     expect(parsed.pathname).toBe("/api/v1/feed");
     expect(parsed.searchParams.get("company_id")).toBe("magnit");
-    expect(parsed.searchParams.get("source")).toBe("Ведомости");
-    expect(parsed.searchParams.get("tag")).toBe("ритейл");
+    expect(parsed.searchParams.getAll("source")).toEqual(["Ведомости", "РБК"]);
+    expect(parsed.searchParams.getAll("tag")).toEqual(["ритейл"]);
+    expect(parsed.searchParams.getAll("sector")).toEqual(["Торговля"]);
     expect(parsed.searchParams.get("q")).toBe("логистика");
     expect(parsed.searchParams.get("from")).toBe("2026-09-01");
+    expect(parsed.searchParams.get("sort")).toBe("date");
+    expect(parsed.searchParams.get("limit")).toBe("10");
+    expect(parsed.searchParams.get("offset")).toBe("20");
   });
 });
 

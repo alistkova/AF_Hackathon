@@ -338,6 +338,7 @@ paths:
         - $ref: "#/components/parameters/Query"
         - $ref: "#/components/parameters/From"
         - $ref: "#/components/parameters/To"
+        - $ref: "#/components/parameters/Sort"
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
       responses:
@@ -500,6 +501,15 @@ components:
       description: Include news published on or before this date.
       schema:
         type: string
+    Sort:
+      name: sort
+      in: query
+      required: false
+      description: Sort by relevance (default) or by publication date.
+      schema:
+        type: string
+        enum: [relevance, date]
+        default: relevance
     Limit:
       name: limit
       in: query

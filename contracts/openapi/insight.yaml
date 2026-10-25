@@ -61,6 +61,14 @@ paths:
           description: Include news published on or before this date.
           schema:
             type: string
+        - name: sort
+          in: query
+          required: false
+          description: Sort by relevance (default) or by publication date.
+          schema:
+            type: string
+            enum: [relevance, date]
+            default: relevance
         - name: limit
           in: query
           required: false

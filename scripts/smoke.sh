@@ -96,7 +96,7 @@ if [[ "$status" != "401" ]]; then
   exit 1
 fi
 
-feed="$(curl -fsS -b "$CLIENT_JAR" "$BASE_URL/api/v1/feed?company_id=$company_id")"
+feed="$(curl -fsS -b "$CLIENT_JAR" "$BASE_URL/api/v1/feed?company_id=$company_id&sort=date&limit=1")"
 python3 -c 'import json,sys
 payload = json.load(sys.stdin)
 items = payload["items"]

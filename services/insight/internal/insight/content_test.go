@@ -57,6 +57,41 @@ func TestContentClientListsNewsWithKindFilter(t *testing.T) {
 	}
 }
 
+func TestContentClientCachesNews(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"news_id":      "news-1",
+			"title":        "Кэшированная новость",
+			"published_at": "2026-10-20T10:00:00Z",
+		}})
+	}))
+	defer server.Close()
+
+	client := NewContentClient(server.URL)
+	client.ttl = time.Minute
+
+	first, err := client.ListNews(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("first list news: %v", err)
+	}
+	second, err := client.ListNews(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("second list news: %v", err)
+	}
+
+	if calls != 1 {
+		t.Fatalf("content service calls = %d, want 1", calls)
+	}
+	if len(first) != 1 || len(second) != 1 {
+		t.Fatalf("unexpected cached items: first=%d second=%d", len(first), len(second))
+	}
+}
+
 func TestContentClientRejectsNonOKResponse(t *testing.T) {
 	t.Parallel()
 

@@ -76,6 +76,21 @@ func TestFilterFeedAppliesDimensions(t *testing.T) {
 	}
 }
 
+func TestSortFeedByDate(t *testing.T) {
+	t.Parallel()
+
+	sorted := SortFeed(filterFixtures(), feedSortDate)
+	got := make([]string, 0, len(sorted))
+	for _, item := range sorted {
+		got = append(got, item.EventID)
+	}
+
+	want := []string{"news-b", "news-a", "news-c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
 func TestFilterFeedByDateOnlyUpperBoundIncludesWholeDay(t *testing.T) {
 	t.Parallel()
 

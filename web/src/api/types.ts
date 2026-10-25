@@ -39,13 +39,16 @@ export type FeedFacets = {
   sectors: FeedFacet[];
 };
 
+export type FeedSort = "relevance" | "date";
+
 export type FeedFilters = {
-  source?: string;
-  tag?: string;
-  sector?: string;
+  sources?: string[];
+  tags?: string[];
+  sectors?: string[];
   query?: string;
   from?: string;
   to?: string;
+  sort?: FeedSort;
 };
 
 export type Source = {

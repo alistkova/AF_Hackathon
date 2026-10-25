@@ -59,6 +59,10 @@ func (h *Handler) Feed(c *gin.Context) {
 	if !ok {
 		return
 	}
+	sortBy, ok := feedSortParam(c)
+	if !ok {
+		return
+	}
 
 	company, err := h.company.Get(c.Request.Context(), companyID)
 	if errors.Is(err, ErrCompanyNotFound) {
@@ -81,6 +85,7 @@ func (h *Handler) Feed(c *gin.Context) {
 	items := RankFeed(company, news, time.Now().UTC())
 	facets := BuildFeedFacets(items)
 	items = FilterFeed(items, filter)
+	items = SortFeed(items, sortBy)
 	total := len(items)
 	if offset > total {
 		offset = total

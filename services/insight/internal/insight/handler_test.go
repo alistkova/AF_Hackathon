@@ -193,6 +193,49 @@ func TestFeedFiltersAndReturnsUnfilteredFacets(t *testing.T) {
 	}
 }
 
+func TestFeedSortsByDate(t *testing.T) {
+	now := time.Now().UTC()
+	router := feedRouter(
+		staticCompany(Company{ID: "magnit", Name: "Магнит", Industry: "Ритейл"}),
+		staticNews([]NewsItem{
+			{
+				NewsID:        "news-old",
+				Title:         "Магнит расширяет логистику",
+				FullText:      "Ритейлер инвестирует в центры.",
+				PublishedAt:   now.Add(-10 * 24 * time.Hour),
+				SourceName:    "Ведомости",
+				TargetSectors: []string{"Торговля"},
+			},
+			{
+				NewsID:        "news-new",
+				Title:         "Ритейлеры открывают новые магазины",
+				FullText:      "Сеть расширяет присутствие.",
+				PublishedAt:   now.Add(-24 * time.Hour),
+				SourceName:    "РБК",
+				TargetSectors: []string{"Торговля"},
+			},
+		}),
+	)
+
+	response := performFeedRequest(t, router, "/api/v1/feed?company_id=magnit&sort=date")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status is %d, want 200: %s", response.Code, response.Body.String())
+	}
+
+	var payload struct {
+		Items []FeedItem `json:"items"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(payload.Items) != 2 {
+		t.Fatalf("got %d items, want 2", len(payload.Items))
+	}
+	if payload.Items[0].EventID != "news-new" {
+		t.Fatalf("first item is %q, want news-new", payload.Items[0].EventID)
+	}
+}
+
 func TestFeedErrors(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -213,6 +256,14 @@ func TestFeedErrors(t *testing.T) {
 		{
 			name:       "invalid limit",
 			query:      "/api/v1/feed?company_id=magnit&limit=0",
+			company:    staticCompany(Company{ID: "magnit"}),
+			news:       staticNews(nil),
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "invalid_request",
+		},
+		{
+			name:       "invalid sort",
+			query:      "/api/v1/feed?company_id=magnit&sort=popular",
 			company:    staticCompany(Company{ID: "magnit"}),
 			news:       staticNews(nil),
 			wantStatus: http.StatusBadRequest,
