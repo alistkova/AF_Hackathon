@@ -46,13 +46,15 @@ type Insight struct {
 }
 
 type FeedItem struct {
-	EventID     string   `json:"event_id"`
-	CompanyID   string   `json:"company_id"`
-	Title       string   `json:"title"`
-	Summary     string   `json:"summary"`
-	Source      string   `json:"source"`
-	URL         string   `json:"url"`
-	PublishedAt string   `json:"published_at"`
-	Relevance   float64  `json:"relevance"`
-	Reasons     []string `json:"reasons"`
+	EventID       string   `json:"event_id"`
+	CompanyID     string   `json:"company_id"`
+	Title         string   `json:"title"`
+	Summary       string   `json:"summary"`
+	Source        string   `json:"source"`
+	URL           string   `json:"url"`
+	PublishedAt   string   `json:"published_at"`
+	Relevance     float64  `json:"relevance"`
+	Reasons       []string `json:"reasons"`
+	Tags          []string `json:"tags"`
+	TargetSectors []string `json:"target_sectors"`
 }

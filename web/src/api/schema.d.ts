@@ -345,6 +345,17 @@ export interface components {
             published_at: string;
             relevance: number;
             reasons: string[];
+            tags: string[];
+            target_sectors: string[];
+        };
+        FeedFacet: {
+            value: string;
+            count: number;
+        };
+        FeedFacets: {
+            sources: components["schemas"]["FeedFacet"][];
+            tags: components["schemas"]["FeedFacet"][];
+            sectors: components["schemas"]["FeedFacet"][];
         };
         Source: {
             source_id: string;
@@ -444,6 +455,18 @@ export interface components {
     };
     parameters: {
         CompanyId: string;
+        /** @description Repeatable source filter. Comma-separated values are also accepted. */
+        Source: string;
+        /** @description Repeatable tag filter. Comma-separated values are also accepted. */
+        Tag: string;
+        /** @description Repeatable target-sector filter. Comma-separated values are also accepted. */
+        Sector: string;
+        /** @description Case-insensitive search over title, summary, source, tags and sectors. */
+        Query: string;
+        /** @description Include news published on or after this date. */
+        From: string;
+        /** @description Include news published on or before this date. */
+        To: string;
         Limit: number;
         Offset: number;
         PathCompanyId: string;
@@ -857,6 +880,18 @@ export interface operations {
         parameters: {
             query: {
                 company_id: components["parameters"]["CompanyId"];
+                /** @description Repeatable source filter. Comma-separated values are also accepted. */
+                source?: components["parameters"]["Source"];
+                /** @description Repeatable tag filter. Comma-separated values are also accepted. */
+                tag?: components["parameters"]["Tag"];
+                /** @description Repeatable target-sector filter. Comma-separated values are also accepted. */
+                sector?: components["parameters"]["Sector"];
+                /** @description Case-insensitive search over title, summary, source, tags and sectors. */
+                q?: components["parameters"]["Query"];
+                /** @description Include news published on or after this date. */
+                from?: components["parameters"]["From"];
+                /** @description Include news published on or before this date. */
+                to?: components["parameters"]["To"];
                 limit?: components["parameters"]["Limit"];
                 offset?: components["parameters"]["Offset"];
             };
@@ -875,6 +910,7 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["FeedItem"][];
                         total: number;
+                        facets: components["schemas"]["FeedFacets"];
                     };
                 };
             };

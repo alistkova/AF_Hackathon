@@ -12,10 +12,47 @@ const event: FeedItem = {
   published_at: "2026-10-18T09:00:00Z",
   relevance: 0.86,
   reasons: ["Упоминание компании", "Отрасль: Торговля"],
+  tags: ["ритейл", "Магнит"],
+  target_sectors: ["Торговля"],
 };
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("api.feed", () => {
+  it("passes filter values to the feed endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          items: [],
+          total: 0,
+          facets: { sources: [], tags: [], sectors: [] },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.feed("magnit", {
+      source: "Ведомости",
+      tag: "ритейл",
+      query: "логистика",
+      from: "2026-09-01",
+    });
+
+    const [url] = fetchMock.mock.calls[0];
+    const parsed = new URL(url as string, "http://localhost");
+    expect(parsed.pathname).toBe("/api/v1/feed");
+    expect(parsed.searchParams.get("company_id")).toBe("magnit");
+    expect(parsed.searchParams.get("source")).toBe("Ведомости");
+    expect(parsed.searchParams.get("tag")).toBe("ритейл");
+    expect(parsed.searchParams.get("q")).toBe("логистика");
+    expect(parsed.searchParams.get("from")).toBe("2026-09-01");
+  });
 });
 
 describe("api.createJob", () => {

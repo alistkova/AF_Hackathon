@@ -24,6 +24,43 @@ paths:
           required: true
           schema:
             type: string
+        - name: source
+          in: query
+          required: false
+          description: Repeatable source filter. Comma-separated values are also accepted.
+          schema:
+            type: string
+        - name: tag
+          in: query
+          required: false
+          description: Repeatable tag filter. Comma-separated values are also accepted.
+          schema:
+            type: string
+        - name: sector
+          in: query
+          required: false
+          description: Repeatable target-sector filter. Comma-separated values are also accepted.
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive search over title, summary, source, tags and sectors.
+          schema:
+            type: string
+            maxLength: 200
+        - name: from
+          in: query
+          required: false
+          description: Include news published on or after this date.
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: false
+          description: Include news published on or before this date.
+          schema:
+            type: string
         - name: limit
           in: query
           required: false
@@ -100,6 +137,8 @@ components:
         - published_at
         - relevance
         - reasons
+        - tags
+        - target_sectors
       properties:
         event_id:
           type: string
@@ -125,9 +164,42 @@ components:
           type: array
           items:
             type: string
+        tags:
+          type: array
+          items:
+            type: string
+        target_sectors:
+          type: array
+          items:
+            type: string
+    FeedFacet:
+      type: object
+      required: [value, count]
+      properties:
+        value:
+          type: string
+        count:
+          type: integer
+          minimum: 0
+    FeedFacets:
+      type: object
+      required: [sources, tags, sectors]
+      properties:
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeedFacet"
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeedFacet"
+        sectors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeedFacet"
     FeedResponse:
       type: object
-      required: [items, total]
+      required: [items, total, facets]
       properties:
         items:
           type: array
@@ -136,3 +208,5 @@ components:
         total:
           type: integer
           minimum: 0
+        facets:
+          $ref: "#/components/schemas/FeedFacets"
