@@ -226,9 +226,11 @@ RAG chunks are stored by the content service as well: `POST /api/v1/rag/chunks` 
 
 ## Feed API
 
-`GET /api/v1/feed?company_id=magnit` returns the company feed. Insight loads the profile from the company service, loads recent news from `GET /api/v1/news?kind=news`, and ranks items by company name, industry, region and recency. Every item carries `relevance` and human-readable `reasons`, so the web client can explain why the event is in the feed. The feed accepts `limit` (default 30, max 50) and `offset`; the response contains `items` and `total`.
+`GET /api/v1/feed?company_id=magnit` returns the company feed. Insight loads the profile from the company service, loads recent news from `GET /api/v1/news?kind=news`, and ranks items by company name, industry, region and recency. Every item carries `relevance` and human-readable `reasons`, so the web client can explain why the event is in the feed. The feed accepts `limit` (default 30, max 50) and `offset`; the response contains `items`, `total` and `facets`.
 
-Insight never reads `content_db`. The content service stays the source of truth for news, and the feed is ranked in memory per request. If nothing matches the company profile, the newest news items are returned as `Общая повестка`.
+Filters are applied after ranking: `source`, `tag` and `sector` are repeatable (or comma-separated), `q` searches title, summary, source, tags and sectors, and `from` / `to` accept `2006-01-02` or RFC3339. Facets contain unfiltered source, tag and sector counts so the client can keep filter options stable. `total` is the filtered count.
+
+Insight never reads `content_db`. The content service stays the source of truth for news, and the feed is ranked in memory per request. Filters currently cover the latest 200 news items fetched from content; if that window becomes a limitation, the next step is pushing the same filters into the content query. If nothing matches the company profile, the newest news items are returned as `Общая повестка`.
 
 ## SSE contract
 
@@ -273,7 +275,7 @@ scripts/            dev, demo, migrate, seed, bootstrap-users, smoke, gen
 - M1 complete: identity with sessions, per-user company access enforced in the gateway, CSV import of companies, people and payments, company profiles and relations.
 - SSE job flow works end to end with the Python stub agent.
 - Content owns news and PDF documents: ingestion with deduplication, chunking, full-text search and raw file storage.
-- The personal feed is ranked from content news by company name, industry, region and recency.
+- The personal feed is ranked from content news by company name, industry, region and recency, with source, tag, search and period filters.
 - The ingestion worker is still a no-op; documents arrive through the API and the seed command.
 - Insight jobs are in-memory for now; `analysis_jobs`/`analysis_events` tables are reserved for durable persistence.
 - Identity is implemented: register, login, logout, `/me`, and per-user company access with admin-only grants.

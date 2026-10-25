@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -132,6 +133,66 @@ func TestFeedPaginates(t *testing.T) {
 	}
 }
 
+func TestFeedFiltersAndReturnsUnfilteredFacets(t *testing.T) {
+	now := time.Now().UTC()
+	router := feedRouter(
+		staticCompany(Company{ID: "magnit", Name: "Магнит", Industry: "Ритейл"}),
+		staticNews([]NewsItem{
+			{
+				NewsID:        "news-vedomosti",
+				Title:         "Магнит расширяет логистику",
+				FullText:      "Ритейлер инвестирует в распределительные центры.",
+				PublishedAt:   now.Add(-2 * 24 * time.Hour),
+				SourceName:    "Ведомости",
+				SourceURL:     "https://example.com/vedomosti",
+				Tags:          []string{"ритейл", "Магнит"},
+				TargetSectors: []string{"Торговля"},
+			},
+			{
+				NewsID:        "news-rbc",
+				Title:         "Ритейлеры наращивают инвестиции",
+				FullText:      "Сеть открывает новые распределительные центры.",
+				PublishedAt:   now.Add(-3 * 24 * time.Hour),
+				SourceName:    "РБК",
+				SourceURL:     "https://example.com/rbc",
+				Tags:          []string{"ритейл"},
+				TargetSectors: []string{"Торговля"},
+			},
+		}),
+	)
+
+	query := url.Values{"company_id": {"magnit"}, "source": {"Ведомости"}}
+	response := performFeedRequest(t, router, "/api/v1/feed?"+query.Encode())
+	if response.Code != http.StatusOK {
+		t.Fatalf("status is %d, want 200: %s", response.Code, response.Body.String())
+	}
+
+	var payload struct {
+		Items  []FeedItem `json:"items"`
+		Total  int        `json:"total"`
+		Facets FeedFacets `json:"facets"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if payload.Total != 1 || len(payload.Items) != 1 {
+		t.Fatalf("got %d items (total %d), want 1", len(payload.Items), payload.Total)
+	}
+	if payload.Items[0].Source != "Ведомости" {
+		t.Fatalf("item source is %q, want Ведомости", payload.Items[0].Source)
+	}
+	if len(payload.Items[0].Tags) == 0 || len(payload.Items[0].TargetSectors) == 0 {
+		t.Fatalf("item does not expose filter metadata: %+v", payload.Items[0])
+	}
+	if len(payload.Facets.Sources) != 2 {
+		t.Fatalf("got %d source facets, want 2", len(payload.Facets.Sources))
+	}
+	if len(payload.Facets.Tags) != 2 {
+		t.Fatalf("got %d tag facets, want 2", len(payload.Facets.Tags))
+	}
+}
+
 func TestFeedErrors(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -152,6 +213,22 @@ func TestFeedErrors(t *testing.T) {
 		{
 			name:       "invalid limit",
 			query:      "/api/v1/feed?company_id=magnit&limit=0",
+			company:    staticCompany(Company{ID: "magnit"}),
+			news:       staticNews(nil),
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "invalid_request",
+		},
+		{
+			name:       "invalid date",
+			query:      "/api/v1/feed?company_id=magnit&from=not-a-date",
+			company:    staticCompany(Company{ID: "magnit"}),
+			news:       staticNews(nil),
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "invalid_request",
+		},
+		{
+			name:       "reversed period",
+			query:      "/api/v1/feed?company_id=magnit&from=2026-09-10&to=2026-09-01",
 			company:    staticCompany(Company{ID: "magnit"}),
 			news:       staticNews(nil),
 			wantStatus: http.StatusBadRequest,

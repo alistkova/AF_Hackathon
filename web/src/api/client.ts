@@ -1,4 +1,4 @@
-import type { Company, FeedItem, InsightJob, User } from "./types";
+import type { Company, FeedFacets, FeedFilters, FeedItem, InsightJob, User } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -46,10 +46,19 @@ export const api = {
   logout: () => requestVoid("/api/v1/auth/logout", { method: "POST" }),
   companies: () => request<{ items: Company[] }>("/api/v1/companies"),
   company: (id: string) => request<Company>(`/api/v1/companies/${id}`),
-  feed: (companyId: string) =>
-    request<{ items: FeedItem[]; total: number }>(
-      `/api/v1/feed?company_id=${encodeURIComponent(companyId)}`,
-    ),
+  feed: (companyId: string, filters: FeedFilters = {}) => {
+    const params = new URLSearchParams({ company_id: companyId });
+    if (filters.source) params.set("source", filters.source);
+    if (filters.tag) params.set("tag", filters.tag);
+    if (filters.sector) params.set("sector", filters.sector);
+    if (filters.query?.trim()) params.set("q", filters.query.trim());
+    if (filters.from) params.set("from", filters.from);
+    if (filters.to) params.set("to", filters.to);
+
+    return request<{ items: FeedItem[]; total: number; facets: FeedFacets }>(
+      `/api/v1/feed?${params.toString()}`,
+    );
+  },
   createJob: (companyId: string, event: FeedItem) =>
     request<InsightJob>("/api/v1/insights/jobs", {
       method: "POST",

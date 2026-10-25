@@ -1,13 +1,71 @@
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { api, eventsUrl } from "../../api/client";
-import type { ErrorEvent, FeedItem, Insight, ResultEvent, StepEvent } from "../../api/types";
+import type {
+  ErrorEvent,
+  FeedFacet,
+  FeedItem,
+  Insight,
+  ResultEvent,
+  StepEvent,
+} from "../../api/types";
 import { formatDate } from "../../shared/format";
 import { AnalysisPanel } from "./AnalysisPanel";
+
+const periodOptions = [
+  { value: "all", label: "Всё время", days: 0 },
+  { value: "90", label: "90 дней", days: 90 },
+  { value: "30", label: "30 дней", days: 30 },
+  { value: "7", label: "7 дней", days: 7 },
+];
 
 type Props = {
   companyId: string;
 };
+
+type FacetSelectProps = {
+  label: string;
+  allLabel: string;
+  value: string;
+  facets: FeedFacet[];
+  onChange: (value: string) => void;
+};
+
+function FacetSelect({ label, allLabel, value, facets, onChange }: FacetSelectProps) {
+  const hasValue = value !== "" && !facets.some((facet) => facet.value === value);
+
+  return (
+    <label className="block">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-[#ef3124]"
+      >
+        <option value="">{allLabel}</option>
+        {hasValue && <option value={value}>{value}</option>}
+        {facets.map((facet) => (
+          <option key={facet.value} value={facet.value}>
+            {facet.value} ({facet.count})
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function periodStart(period: string): string | undefined {
+  const option = periodOptions.find((item) => item.value === period);
+  if (!option || option.days === 0) {
+    return undefined;
+  }
+
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - option.days);
+  return date.toISOString().slice(0, 10);
+}
 
 export function Feed({ companyId }: Props) {
   const sourceRef = useRef<EventSource | null>(null);
@@ -16,13 +74,28 @@ export function Feed({ companyId }: Props) {
   const [insight, setInsight] = useState<Insight | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [source, setSource] = useState("");
+  const [tag, setTag] = useState("");
+  const [period, setPeriod] = useState("all");
+  const deferredQuery = useDeferredValue(query);
+  const from = periodStart(period);
+  const hasFilters = Boolean(source || tag || period !== "all" || query.trim());
 
   const feed = useQuery({
-    queryKey: ["feed", companyId],
-    queryFn: () => api.feed(companyId),
+    queryKey: ["feed", companyId, source, tag, deferredQuery, from],
+    queryFn: () => api.feed(companyId, { source, tag, query: deferredQuery, from }),
     enabled: Boolean(companyId),
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   });
+
+  function resetFilters() {
+    setQuery("");
+    setSource("");
+    setTag("");
+    setPeriod("all");
+  }
 
   useEffect(() => {
     return () => sourceRef.current?.close();
@@ -88,6 +161,11 @@ export function Feed({ companyId }: Props) {
   }
 
   const activeItem = feed.data?.items.find((item) => item.event_id === activeEventId);
+  const sources = feed.data?.facets.sources ?? [];
+  const tags = feed.data?.facets.tags ?? [];
+  const shown = feed.data?.items.length ?? 0;
+  const total = feed.data?.total ?? 0;
+  const countLabel = total > shown ? `${shown} из ${total}` : `${total} событий`;
 
   return (
     <section className="mt-6 space-y-4">
@@ -108,8 +186,73 @@ export function Feed({ companyId }: Props) {
             {feed.isFetching ? "Обновляем…" : "Обновить"}
           </button>
           <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-500 ring-1 ring-slate-200">
-            {feed.data?.items.length ?? 0} событий
+            {countLabel}
           </span>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Поиск
+            </span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Заголовок, текст или тег"
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#ef3124]"
+            />
+          </label>
+
+          <FacetSelect
+            label="Источник"
+            allLabel="Все источники"
+            value={source}
+            facets={sources}
+            onChange={setSource}
+          />
+
+          <FacetSelect
+            label="Тема"
+            allLabel="Все темы"
+            value={tag}
+            facets={tags}
+            onChange={setTag}
+          />
+
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Период
+            </span>
+            <select
+              value={period}
+              onChange={(event) => setPeriod(event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-[#ef3124]"
+            >
+              {periodOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-3 flex min-h-6 items-center justify-between gap-3">
+          <p className="text-xs text-slate-400">
+            {hasFilters ? "Фильтры применяются ко всей ленте" : "Показаны все события"}
+          </p>
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="text-xs font-semibold text-[#b42318] underline decoration-red-200 underline-offset-4 hover:decoration-red-500"
+            >
+              Сбросить фильтры
+            </button>
+          )}
         </div>
       </div>
 
@@ -128,7 +271,20 @@ export function Feed({ companyId }: Props) {
 
       {feed.data?.items.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
-          В content-сервисе пока нет новостей. Загрузите их через seed или API документов.
+          {hasFilters ? (
+            <>
+              <p>По выбранным фильтрам ничего не найдено.</p>
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="mt-3 text-sm font-semibold text-[#b42318] underline decoration-red-200 underline-offset-4 hover:decoration-red-500"
+              >
+                Сбросить фильтры
+              </button>
+            </>
+          ) : (
+            "В content-сервисе пока нет новостей. Загрузите их через seed или API документов."
+          )}
         </div>
       )}
 

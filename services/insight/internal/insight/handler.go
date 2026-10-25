@@ -55,6 +55,10 @@ func (h *Handler) Feed(c *gin.Context) {
 	if !ok {
 		return
 	}
+	filter, ok := feedFilter(c)
+	if !ok {
+		return
+	}
 
 	company, err := h.company.Get(c.Request.Context(), companyID)
 	if errors.Is(err, ErrCompanyNotFound) {
@@ -75,6 +79,8 @@ func (h *Handler) Feed(c *gin.Context) {
 	}
 
 	items := RankFeed(company, news, time.Now().UTC())
+	facets := BuildFeedFacets(items)
+	items = FilterFeed(items, filter)
 	total := len(items)
 	if offset > total {
 		offset = total
@@ -85,8 +91,9 @@ func (h *Handler) Feed(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"items": items[offset:end],
-		"total": total,
+		"items":  items[offset:end],
+		"total":  total,
+		"facets": facets,
 	})
 }
 

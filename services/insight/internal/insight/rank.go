@@ -467,16 +467,27 @@ func toFeedItem(company Company, item NewsItem, relevance float64, reasons []str
 		publishedAt = item.PublishedAt.UTC().Format(time.RFC3339)
 	}
 
+	tags := item.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	sectors := item.TargetSectors
+	if sectors == nil {
+		sectors = []string{}
+	}
+
 	return FeedItem{
-		EventID:     feedEventID(item),
-		CompanyID:   company.ID,
-		Title:       item.Title,
-		Summary:     summary,
-		Source:      item.SourceName,
-		URL:         item.SourceURL,
-		PublishedAt: publishedAt,
-		Relevance:   relevance,
-		Reasons:     reasons,
+		EventID:       feedEventID(item),
+		CompanyID:     company.ID,
+		Title:         item.Title,
+		Summary:       summary,
+		Source:        item.SourceName,
+		URL:           item.SourceURL,
+		PublishedAt:   publishedAt,
+		Relevance:     relevance,
+		Reasons:       reasons,
+		Tags:          tags,
+		TargetSectors: sectors,
 	}
 }
 

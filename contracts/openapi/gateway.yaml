@@ -332,6 +332,12 @@ paths:
         - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/CompanyId"
+        - $ref: "#/components/parameters/Source"
+        - $ref: "#/components/parameters/Tag"
+        - $ref: "#/components/parameters/Sector"
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/From"
+        - $ref: "#/components/parameters/To"
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
       responses:
@@ -341,7 +347,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items, total]
+                required: [items, total, facets]
                 properties:
                   items:
                     type: array
@@ -350,6 +356,8 @@ paths:
                   total:
                     type: integer
                     minimum: 0
+                  facets:
+                    $ref: "#/components/schemas/FeedFacets"
         "400":
           description: company_id is missing or pagination is invalid
         "401":
@@ -447,6 +455,49 @@ components:
       name: company_id
       in: query
       required: true
+      schema:
+        type: string
+    Source:
+      name: source
+      in: query
+      required: false
+      description: Repeatable source filter. Comma-separated values are also accepted.
+      schema:
+        type: string
+    Tag:
+      name: tag
+      in: query
+      required: false
+      description: Repeatable tag filter. Comma-separated values are also accepted.
+      schema:
+        type: string
+    Sector:
+      name: sector
+      in: query
+      required: false
+      description: Repeatable target-sector filter. Comma-separated values are also accepted.
+      schema:
+        type: string
+    Query:
+      name: q
+      in: query
+      required: false
+      description: Case-insensitive search over title, summary, source, tags and sectors.
+      schema:
+        type: string
+        maxLength: 200
+    From:
+      name: from
+      in: query
+      required: false
+      description: Include news published on or after this date.
+      schema:
+        type: string
+    To:
+      name: to
+      in: query
+      required: false
+      description: Include news published on or before this date.
       schema:
         type: string
     Limit:
@@ -637,6 +688,8 @@ components:
         - published_at
         - relevance
         - reasons
+        - tags
+        - target_sectors
       properties:
         event_id:
           type: string
@@ -662,6 +715,39 @@ components:
           type: array
           items:
             type: string
+        tags:
+          type: array
+          items:
+            type: string
+        target_sectors:
+          type: array
+          items:
+            type: string
+    FeedFacet:
+      type: object
+      required: [value, count]
+      properties:
+        value:
+          type: string
+        count:
+          type: integer
+          minimum: 0
+    FeedFacets:
+      type: object
+      required: [sources, tags, sectors]
+      properties:
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeedFacet"
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeedFacet"
+        sectors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeedFacet"
     Source:
       type: object
       required: [source_id, title, url]

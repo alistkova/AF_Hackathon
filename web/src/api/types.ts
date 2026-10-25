@@ -24,6 +24,28 @@ export type FeedItem = {
   published_at: string;
   relevance: number;
   reasons: string[];
+  tags: string[];
+  target_sectors: string[];
+};
+
+export type FeedFacet = {
+  value: string;
+  count: number;
+};
+
+export type FeedFacets = {
+  sources: FeedFacet[];
+  tags: FeedFacet[];
+  sectors: FeedFacet[];
+};
+
+export type FeedFilters = {
+  source?: string;
+  tag?: string;
+  sector?: string;
+  query?: string;
+  from?: string;
+  to?: string;
 };
 
 export type Source = {

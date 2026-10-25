@@ -105,8 +105,14 @@ assert items, "feed is empty; seed content news first"
 for item in items:
     assert isinstance(item.get("relevance"), (int, float)), item
     assert isinstance(item.get("reasons"), list), item
+    assert isinstance(item.get("tags"), list), item
+    assert isinstance(item.get("target_sectors"), list), item
     assert item.get("source"), item
     assert item.get("url"), item
+facets = payload.get("facets")
+assert isinstance(facets, dict), payload
+for key in ("sources", "tags", "sectors"):
+    assert isinstance(facets.get(key), list), payload
 ' <<<"$feed"
 
 if [[ -n "$forbidden" ]]; then
