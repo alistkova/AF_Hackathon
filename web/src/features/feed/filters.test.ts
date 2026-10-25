@@ -6,6 +6,7 @@ import {
   filterFacetOptions,
   hasActiveFeedFilters,
   hasInvalidFeedDateRange,
+  isFilterSelected,
   toApiFeedFilters,
   toggleValue,
 } from "./filters";
@@ -15,6 +16,16 @@ describe("feed filters", () => {
     expect(toggleValue([], "ритейл")).toEqual(["ритейл"]);
     expect(toggleValue(["ритейл"], "ритейл")).toEqual([]);
     expect(toggleValue(["ритейл"], "логистика")).toEqual(["ритейл", "логистика"]);
+  });
+
+  it("treats filter values case-insensitively", () => {
+    expect(toggleValue(["Магнит"], "магнит")).toEqual([]);
+    expect(toggleValue(["магнит"], "Магнит")).toEqual([]);
+    expect(isFilterSelected(["Магнит"], "магнит")).toBe(true);
+    expect(feedFiltersEqual(
+      { ...createDefaultFeedFilters(), tags: ["Магнит"] },
+      { ...createDefaultFeedFilters(), tags: ["магнит"] },
+    )).toBe(true);
   });
 
   it("uses from-to dates and sort", () => {

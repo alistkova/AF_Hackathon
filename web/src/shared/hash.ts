@@ -6,6 +6,14 @@ export type Route =
   | { name: "company-edit"; companyId: string }
   | { name: "company-members"; companyId: string };
 
+function decodeSegment(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#/, "").replace(/\/+$/, "");
   if (path === "/profile") return { name: "profile" };
@@ -14,13 +22,13 @@ export function parseRoute(hash: string): Route {
 
   const members = path.match(/^\/companies\/([^/]+)\/members$/);
   if (members) {
-    const companyId = decodeURIComponent(members[1]);
+    const companyId = decodeSegment(members[1]);
     if (companyId) return { name: "company-members", companyId };
   }
 
   const edit = path.match(/^\/companies\/([^/]+)\/edit$/);
   if (edit) {
-    const companyId = decodeURIComponent(edit[1]);
+    const companyId = decodeSegment(edit[1]);
     if (companyId) return { name: "company-edit", companyId };
   }
   return { name: "feed" };

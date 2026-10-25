@@ -7,6 +7,7 @@ import {
   filterFacetOptions,
   hasActiveFeedFilters,
   hasInvalidFeedDateRange,
+  isFilterSelected,
   toggleValue,
   type FeedFilterState,
 } from "./filters";
@@ -29,7 +30,7 @@ function FacetGroup({ label, facets, selected, onToggle }: FacetGroupProps) {
   const [expanded, setExpanded] = useState(true);
   const [search, setSearch] = useState("");
   const extras = selected
-    .filter((value) => !facets.some((facet) => facet.value === value))
+    .filter((value) => !facets.some((facet) => isFilterSelected([facet.value], value)))
     .map((value) => ({ value, count: 0 }));
   const allOptions = [...facets, ...extras];
   const options = filterFacetOptions(allOptions, selected, search);
@@ -71,7 +72,7 @@ function FacetGroup({ label, facets, selected, onToggle }: FacetGroupProps) {
               </p>
             )}
             {options.map((facet) => {
-              const active = selected.includes(facet.value);
+              const active = isFilterSelected(selected, facet.value);
               return (
                 <button
                   key={facet.value}

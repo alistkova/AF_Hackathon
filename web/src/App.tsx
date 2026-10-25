@@ -53,6 +53,7 @@ function Workspace({ user, onUserChange, onLogout }: WorkspaceProps) {
   const [companyId, setCompanyId] = useState("");
   const [filters, setFilters] = useState<FeedFilterState>(createDefaultFeedFilters);
   const [facets, setFacets] = useState<FeedFacets | null>(null);
+  const [resetKey, setResetKey] = useState(0);
   const companies = useQuery({
     queryKey: ["companies"],
     queryFn: api.companies,
@@ -91,6 +92,7 @@ function Workspace({ user, onUserChange, onLogout }: WorkspaceProps) {
 
   function resetFilters() {
     setFilters(createDefaultFeedFilters());
+    setResetKey((value) => value + 1);
   }
 
   function setQuery(query: string) {
@@ -193,6 +195,7 @@ function Workspace({ user, onUserChange, onLogout }: WorkspaceProps) {
                   key={companyId}
                   companyId={companyId}
                   filters={filters}
+                  resetKey={resetKey}
                   onQueryChange={setQuery}
                   onFacetsChange={setFacets}
                   onResetFilters={resetFilters}

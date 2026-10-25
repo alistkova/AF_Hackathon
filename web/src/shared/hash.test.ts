@@ -32,6 +32,11 @@ describe("parseRoute", () => {
     expect(parseRoute("#/companies/cmp_1")).toEqual({ name: "feed" });
     expect(parseRoute("#/profile/unknown")).toEqual({ name: "feed" });
   });
+
+  it("does not throw on malformed encoding", () => {
+    expect(parseRoute("#/companies/%/members")).toEqual({ name: "company-members", companyId: "%" });
+    expect(parseRoute("#/companies/%/edit")).toEqual({ name: "company-edit", companyId: "%" });
+  });
 });
 
 describe("routeHref", () => {

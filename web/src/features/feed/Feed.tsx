@@ -12,13 +12,19 @@ import type {
 import { formatDate } from "../../shared/format";
 import { useDebouncedValue } from "../../shared/useDebouncedValue";
 import { AnalysisPanel } from "./AnalysisPanel";
-import { hasActiveFeedFilters, toApiFeedFilters, type FeedFilterState } from "./filters";
+import {
+  hasActiveFeedFilters,
+  isFilterSelected,
+  toApiFeedFilters,
+  type FeedFilterState,
+} from "./filters";
 
 const feedPageSize = 30;
 
 type Props = {
   companyId: string;
   filters: FeedFilterState;
+  resetKey: number;
   onQueryChange: (query: string) => void;
   onFacetsChange: (facets: FeedFacets | null) => void;
   onResetFilters: () => void;
@@ -30,6 +36,7 @@ type Props = {
 export function Feed({
   companyId,
   filters,
+  resetKey,
   onQueryChange,
   onFacetsChange,
   onResetFilters,
@@ -64,6 +71,14 @@ export function Feed({
     lastCommittedQuery.current = filters.query;
     setSearch(filters.query);
   }, [filters.query]);
+
+  useEffect(() => {
+    if (resetKey === 0) {
+      return;
+    }
+    lastCommittedQuery.current = "";
+    setSearch("");
+  }, [resetKey]);
 
   const feed = useInfiniteQuery({
     queryKey: ["feed", companyId, apiFilters],
@@ -169,6 +184,7 @@ export function Feed({
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Поиск по ленте"
             aria-label="Поиск по ленте"
+            maxLength={200}
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#ef3124] sm:w-56"
           />
           <button
@@ -234,9 +250,9 @@ export function Feed({
                   type="button"
                   onClick={() => onToggleSource(source)}
                   title="Фильтровать по источнику"
-                  aria-pressed={filters.sources.includes(source)}
+                  aria-pressed={isFilterSelected(filters.sources, source)}
                   className={`rounded-full px-2.5 py-1 font-medium transition ${
-                    filters.sources.includes(source)
+                    isFilterSelected(filters.sources, source)
                       ? "bg-slate-900 text-white"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                   }`}
@@ -275,7 +291,7 @@ export function Feed({
             {(item.tags.length > 0 || item.target_sectors.length > 0) && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {item.tags.map((tag) => {
-                  const active = filters.tags.includes(tag);
+                  const active = isFilterSelected(filters.tags, tag);
                   return (
                     <button
                       key={`tag-${tag}`}
@@ -293,7 +309,7 @@ export function Feed({
                   );
                 })}
                 {item.target_sectors.map((sector) => {
-                  const active = filters.sectors.includes(sector);
+                  const active = isFilterSelected(filters.sectors, sector);
                   return (
                     <button
                       key={`sector-${sector}`}
