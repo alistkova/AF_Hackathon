@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FeedFacet, FeedFacets } from "../../api/types";
 import {
   activeFeedFilterCount,
+  createDefaultFeedFilters,
+  feedFiltersEqual,
+  filterFacetOptions,
   hasActiveFeedFilters,
   hasInvalidFeedDateRange,
   toggleValue,
@@ -24,10 +27,12 @@ type FacetGroupProps = {
 
 function FacetGroup({ label, facets, selected, onToggle }: FacetGroupProps) {
   const [expanded, setExpanded] = useState(true);
+  const [search, setSearch] = useState("");
   const extras = selected
     .filter((value) => !facets.some((facet) => facet.value === value))
     .map((value) => ({ value, count: 0 }));
-  const options = [...facets, ...extras];
+  const allOptions = [...facets, ...extras];
+  const options = filterFacetOptions(allOptions, selected, search);
 
   return (
     <div>
@@ -51,28 +56,41 @@ function FacetGroup({ label, facets, selected, onToggle }: FacetGroupProps) {
       </button>
 
       {expanded && (
-        <div className="mt-1 max-h-40 space-y-1 overflow-y-auto pr-1">
-          {options.length === 0 && <p className="text-xs text-slate-400">Нет значений</p>}
-          {options.map((facet) => {
-            const active = selected.includes(facet.value);
-            return (
-              <button
-                key={facet.value}
-                type="button"
-                aria-pressed={active}
-                title={facet.value}
-                onClick={() => onToggle(facet.value)}
-                className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition ${
-                  active
-                    ? "bg-slate-900 font-medium text-white"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <span className="truncate">{facet.value}</span>
-                <span className="shrink-0 text-[10px] opacity-70">{facet.count}</span>
-              </button>
-            );
-          })}
+        <div className="mt-1 space-y-1">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={`Поиск: ${label.toLowerCase()}`}
+            className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#ef3124]"
+          />
+          <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+            {options.length === 0 && (
+              <p className="text-xs text-slate-400">
+                {allOptions.length === 0 ? "Нет значений" : "Ничего не найдено"}
+              </p>
+            )}
+            {options.map((facet) => {
+              const active = selected.includes(facet.value);
+              return (
+                <button
+                  key={facet.value}
+                  type="button"
+                  aria-pressed={active}
+                  title={facet.value}
+                  onClick={() => onToggle(facet.value)}
+                  className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition ${
+                    active
+                      ? "bg-slate-900 font-medium text-white"
+                      : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span className="truncate">{facet.value}</span>
+                  <span className="shrink-0 text-[10px] opacity-70">{facet.count}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -83,11 +101,41 @@ export function FeedFilters({ filters, facets, onChange, onReset }: Props) {
   const [open, setOpen] = useState(() =>
     typeof window === "undefined" ? true : window.matchMedia("(min-width: 1024px)").matches,
   );
+  const [draft, setDraft] = useState<FeedFilterState>(filters);
+  const previousFilters = useRef(filters);
+
+  useEffect(() => {
+    const previous = previousFilters.current;
+    previousFilters.current = filters;
+
+    if (
+      previous.query !== filters.query &&
+      feedFiltersEqual({ ...previous, query: filters.query }, filters)
+    ) {
+      setDraft((current) => ({ ...current, query: filters.query }));
+      return;
+    }
+    setDraft(filters);
+  }, [filters]);
+
   const sources = facets?.sources ?? [];
   const tags = facets?.tags ?? [];
   const sectors = facets?.sectors ?? [];
-  const activeCount = activeFeedFilterCount(filters);
-  const invalidDateRange = hasInvalidFeedDateRange(filters);
+  const activeCount = activeFeedFilterCount(draft);
+  const invalidDateRange = hasInvalidFeedDateRange(draft);
+  const dirty = !feedFiltersEqual(draft, filters);
+  const canApply = dirty && !invalidDateRange;
+  const canReset = hasActiveFeedFilters(draft) || hasActiveFeedFilters(filters);
+
+  function apply() {
+    if (!canApply) return;
+    onChange(draft);
+  }
+
+  function reset() {
+    setDraft(createDefaultFeedFilters());
+    onReset();
+  }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -95,7 +143,7 @@ export function FeedFilters({ filters, facets, onChange, onReset }: Props) {
         <div>
           <p className="text-sm font-semibold text-slate-800">Фильтры</p>
           <p className="mt-1 text-xs leading-5 text-slate-400">
-            Поиск и отбор применяются ко всей ленте
+            Отбор применяется ко всей ленте после нажатия «Применить»
           </p>
         </div>
         <button
@@ -113,41 +161,28 @@ export function FeedFilters({ filters, facets, onChange, onReset }: Props) {
         id="feed-filters"
         className={`${open ? "mt-3 block" : "hidden"} space-y-3 lg:mt-3 lg:block`}
       >
-        <label className="block">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-            Поиск
-          </span>
-          <input
-            type="search"
-            value={filters.query}
-            onChange={(event) => onChange({ ...filters, query: event.target.value })}
-            placeholder="Заголовок, текст или тег"
-            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#ef3124]"
-          />
-        </label>
-
         <FacetGroup
           label="Источники"
           facets={sources}
-          selected={filters.sources}
+          selected={draft.sources}
           onToggle={(source) =>
-            onChange({ ...filters, sources: toggleValue(filters.sources, source) })
+            setDraft({ ...draft, sources: toggleValue(draft.sources, source) })
           }
         />
 
         <FacetGroup
           label="Темы"
           facets={tags}
-          selected={filters.tags}
-          onToggle={(tag) => onChange({ ...filters, tags: toggleValue(filters.tags, tag) })}
+          selected={draft.tags}
+          onToggle={(tag) => setDraft({ ...draft, tags: toggleValue(draft.tags, tag) })}
         />
 
         <FacetGroup
           label="Отрасли"
           facets={sectors}
-          selected={filters.sectors}
+          selected={draft.sectors}
           onToggle={(sector) =>
-            onChange({ ...filters, sectors: toggleValue(filters.sectors, sector) })
+            setDraft({ ...draft, sectors: toggleValue(draft.sectors, sector) })
           }
         />
 
@@ -160,9 +195,9 @@ export function FeedFilters({ filters, facets, onChange, onReset }: Props) {
               <span className="text-[10px] font-medium text-slate-400">С</span>
               <input
                 type="date"
-                value={filters.from}
-                max={filters.to || undefined}
-                onChange={(event) => onChange({ ...filters, from: event.target.value })}
+                value={draft.from}
+                max={draft.to || undefined}
+                onChange={(event) => setDraft({ ...draft, from: event.target.value })}
                 className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none transition focus:border-[#ef3124]"
               />
             </label>
@@ -170,9 +205,9 @@ export function FeedFilters({ filters, facets, onChange, onReset }: Props) {
               <span className="text-[10px] font-medium text-slate-400">По</span>
               <input
                 type="date"
-                value={filters.to}
-                min={filters.from || undefined}
-                onChange={(event) => onChange({ ...filters, to: event.target.value })}
+                value={draft.to}
+                min={draft.from || undefined}
+                onChange={(event) => setDraft({ ...draft, to: event.target.value })}
                 className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none transition focus:border-[#ef3124]"
               />
             </label>
@@ -195,9 +230,9 @@ export function FeedFilters({ filters, facets, onChange, onReset }: Props) {
           <div className="mt-1 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
             <button
               type="button"
-              onClick={() => onChange({ ...filters, sort: "relevance" })}
+              onClick={() => setDraft({ ...draft, sort: "relevance" })}
               className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold transition ${
-                filters.sort === "relevance"
+                draft.sort === "relevance"
                   ? "bg-white text-slate-900 shadow-sm"
                   : "text-slate-500 hover:text-slate-700"
               }`}
@@ -206,9 +241,9 @@ export function FeedFilters({ filters, facets, onChange, onReset }: Props) {
             </button>
             <button
               type="button"
-              onClick={() => onChange({ ...filters, sort: "date" })}
+              onClick={() => setDraft({ ...draft, sort: "date" })}
               className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold transition ${
-                filters.sort === "date"
+                draft.sort === "date"
                   ? "bg-white text-slate-900 shadow-sm"
                   : "text-slate-500 hover:text-slate-700"
               }`}
@@ -218,15 +253,25 @@ export function FeedFilters({ filters, facets, onChange, onReset }: Props) {
           </div>
         </div>
 
-        {hasActiveFeedFilters(filters) && (
+        <div className="space-y-2">
           <button
             type="button"
-            onClick={onReset}
-            className="w-full rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-[#b42318] transition hover:bg-red-100"
+            onClick={apply}
+            disabled={!canApply}
+            className="w-full rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
           >
-            Сбросить фильтры
+            {dirty && activeCount ? `Применить (${activeCount})` : "Применить"}
           </button>
-        )}
+          {canReset && (
+            <button
+              type="button"
+              onClick={reset}
+              className="w-full rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-[#b42318] transition hover:bg-red-100"
+            >
+              Сбросить фильтры
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

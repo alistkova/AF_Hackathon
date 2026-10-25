@@ -61,6 +61,10 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
     setFilters(createDefaultFeedFilters());
   }
 
+  function setQuery(query: string) {
+    setFilters((current) => (current.query === query ? current : { ...current, query }));
+  }
+
   function toggleSource(source: string) {
     setFilters((current) => ({ ...current, sources: toggleValue(current.sources, source) }));
   }
@@ -140,6 +144,7 @@ function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
                 key={companyId}
                 companyId={companyId}
                 filters={filters}
+                onQueryChange={setQuery}
                 onFacetsChange={setFacets}
                 onResetFilters={resetFilters}
                 onToggleSource={toggleSource}
