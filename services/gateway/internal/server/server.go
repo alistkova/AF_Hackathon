@@ -26,12 +26,13 @@ const (
 const maxJobBody = 1 << 20
 
 type Config struct {
-	CompanyURL  string
-	ContentURL  string
-	InsightURL  string
-	IdentityURL string
-	CookieName  string
-	Logger      *slog.Logger
+	CompanyURL    string
+	ContentURL    string
+	InsightURL    string
+	IdentityURL   string
+	InternalToken string
+	CookieName    string
+	Logger        *slog.Logger
 }
 
 func New(cfg Config) *gin.Engine {
@@ -40,7 +41,7 @@ func New(cfg Config) *gin.Engine {
 	insightProxy := sse.Proxy(cfg.InsightURL, cfg.Logger)
 	identityProxy := sse.Proxy(cfg.IdentityURL, cfg.Logger)
 	guard := &guard{
-		identity:   auth.NewClient(cfg.IdentityURL),
+		identity:   auth.NewClient(cfg.IdentityURL, cfg.InternalToken),
 		insights:   newInsightClient(cfg.InsightURL),
 		companies:  newCompanyClient(cfg.CompanyURL),
 		cookieName: cfg.CookieName,
@@ -63,8 +64,14 @@ func New(cfg Config) *gin.Engine {
 	companies.GET("/:id/relations", guard.companyAccess(), companyProxy)
 	companies.GET("/:id/members", guard.companyManageAccess(), identityProxy)
 	companies.POST("/:id/members", guard.companyManageAccess(), identityProxy)
+	companies.PATCH("/:id/members/:userId", guard.companyManageAccess(), identityProxy)
 	companies.DELETE("/:id/members/:userId", guard.companyManageAccess(), identityProxy)
 	companies.PUT("/:id", guard.companyOwnerAccess(), guard.updateCompany)
+
+	access := router.Group("/api/v1/access")
+	access.Use(guard.session(), guard.requireAdmin())
+	access.POST("/grant", guard.grantCompanyAccess(), identityProxy)
+	access.POST("/revoke", identityProxy)
 
 	feed := router.Group("/api/v1/feed")
 	feed.Use(guard.session(), guard.feedAccess())
@@ -137,8 +144,13 @@ func (g *guard) session() gin.HandlerFunc {
 
 func (g *guard) companyAccess() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if _, ok := currentUser(c); !ok {
+		user, ok := currentUser(c)
+		if !ok {
 			httpx.Error(c, http.StatusUnauthorized, "unauthorized", "Требуется авторизация")
+			return
+		}
+		if user.Role == auth.RoleAdmin && c.Request.URL.Path != "/api/v1/companies" {
+			c.Next()
 			return
 		}
 
@@ -177,6 +189,15 @@ func (g *guard) companyManageAccess() gin.HandlerFunc {
 			httpx.Error(c, http.StatusUnauthorized, "unauthorized", "Требуется авторизация")
 			return
 		}
+
+		companyID := companyIDFromPath(c.Request.URL.Path)
+		if companyID == "" {
+			httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
+			return
+		}
+		if !g.ensureCompanyExists(c, companyID) {
+			return
+		}
 		if user.Role == auth.RoleAdmin {
 			c.Next()
 			return
@@ -186,7 +207,7 @@ func (g *guard) companyManageAccess() gin.HandlerFunc {
 		if !ok {
 			return
 		}
-		if !slices.Contains(allowed, companyIDFromPath(c.Request.URL.Path)) {
+		if !slices.Contains(allowed, companyID) {
 			httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
 			return
 		}
@@ -201,14 +222,17 @@ func (g *guard) companyOwnerAccess() gin.HandlerFunc {
 			httpx.Error(c, http.StatusUnauthorized, "unauthorized", "Требуется авторизация")
 			return
 		}
-		if user.Role == auth.RoleAdmin {
-			c.Next()
-			return
-		}
 
 		companyID := companyIDFromPath(c.Request.URL.Path)
 		if companyID == "" {
 			httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
+			return
+		}
+		if !g.ensureCompanyExists(c, companyID) {
+			return
+		}
+		if user.Role == auth.RoleAdmin {
+			c.Next()
 			return
 		}
 
@@ -223,6 +247,41 @@ func (g *guard) companyOwnerAccess() gin.HandlerFunc {
 		}
 		if role != auth.RoleOwner {
 			httpx.Error(c, http.StatusForbidden, "forbidden", "Недостаточно прав")
+			return
+		}
+		c.Next()
+	}
+}
+
+func (g *guard) ensureCompanyExists(c *gin.Context, companyID string) bool {
+	exists, err := g.companies.Exists(c.Request.Context(), companyID)
+	if err != nil {
+		g.logger.Error("check company", "error", err, "company_id", companyID, "request_id", c.GetString("request_id"))
+		httpx.Error(c, http.StatusBadGateway, "company_unavailable", "Сервис компаний недоступен")
+		return false
+	}
+	if !exists {
+		httpx.Error(c, http.StatusNotFound, "company_not_found", "Компания не найдена")
+		return false
+	}
+	return true
+}
+
+func (g *guard) grantCompanyAccess() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		body, err := readBody(c, 4<<10)
+		if err != nil {
+			httpx.Error(c, http.StatusBadRequest, "invalid_request", "Некорректный запрос")
+			return
+		}
+		var payload struct {
+			CompanyID string `json:"company_id"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil || strings.TrimSpace(payload.CompanyID) == "" {
+			httpx.Error(c, http.StatusBadRequest, "invalid_request", "Укажите company_id")
+			return
+		}
+		if !g.ensureCompanyExists(c, strings.TrimSpace(payload.CompanyID)) {
 			return
 		}
 		c.Next()

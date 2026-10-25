@@ -69,8 +69,10 @@ described in `contracts/openapi/identity.yaml`. The gateway forwards `/api/v1/au
 The profile uses `GET/PATCH /api/v1/me`, `POST /api/v1/me/password`,
 `GET /api/v1/me/memberships` and the company member endpoints. Company visibility is
 membership-based for every role; company creation is orchestrated by the gateway and records
-the creator as the owner through the internal membership endpoint. Company edits use
-`PUT /api/v1/companies/{id}` and are allowed only for the owner or a system admin.
+the creator as the owner through the internal membership endpoint protected by
+`IDENTITY_INTERNAL_TOKEN`. Company edits use `PUT /api/v1/companies/{id}` and memberships can
+be promoted or demoted with `PATCH /api/v1/companies/{id}/members/{userId}`; both are allowed
+only for the owner or a system admin. The last owner cannot be removed or demoted.
 
 ## RAG chunk API
 

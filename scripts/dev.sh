@@ -12,6 +12,7 @@ source .env
 set +a
 
 export IDENTITY_REGISTRATION_ENABLED="${IDENTITY_REGISTRATION_ENABLED:-true}"
+export IDENTITY_INTERNAL_TOKEN="${IDENTITY_INTERNAL_TOKEN:-dev-internal-token}"
 
 if [[ "${SKIP_INFRA:-0}" != "1" ]]; then
   docker compose -f compose.dev.yaml up -d --wait

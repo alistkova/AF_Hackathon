@@ -41,7 +41,7 @@ Open <http://localhost:3000>. The demo starts Postgres, Redis, all Go services, 
 | `demo-admin@alfa.local` | `admin` | member of `magnit`, `severstal`, `sber` |
 | `demo-client@alfa.local` | `analyst` | owner of `magnit` and `severstal` |
 
-The password for both is `demo-password` (`DEMO_PASSWORD`). Override the emails with `DEMO_ADMIN_EMAIL` and `DEMO_CLIENT_EMAIL`, the admin's companies with `DEMO_ADMIN_COMPANIES` and the client's companies with `DEMO_CLIENT_COMPANIES`. The client becomes the owner of its companies, the admin a member. `make demo-users` recreates the accounts on an already running stack.
+The password for both is `demo-password` (`DEMO_PASSWORD`). Override the emails with `DEMO_ADMIN_EMAIL` and `DEMO_CLIENT_EMAIL`, the admin's companies with `DEMO_ADMIN_COMPANIES` and the client's companies with `DEMO_CLIENT_COMPANIES`. The client becomes the owner of its companies, the admin a member. `make demo-users` recreates the accounts on an already running stack; it reads the full company catalogue from `COMPANY_URL` (default `http://localhost:8081`) so the client can be granted companies the admin does not belong to.
 
 Reset an empty demo:
 
@@ -227,9 +227,9 @@ curl -s -b /tmp/alfa.jar -X POST localhost:8080/api/v1/companies/magnit/members 
   -d '{"email":"colleague@example.com"}'
 ```
 
-Passwords are bcrypt hashes and only SHA-256 token hashes are persisted. Sessions live in the `alfa_session` cookie (`SESSION_COOKIE_NAME`) or in an `Authorization: Bearer` header. The first registered user becomes `admin`, later users become `analyst`; granting and revoking company access through `/api/v1/access` requires `admin`. Login is rate-limited (`IDENTITY_LOGIN_MAX_ATTEMPTS` per `IDENTITY_LOGIN_WINDOW`), and expired sessions are pruned in the background. `PATCH /api/v1/me` updates the email and the primary company, `POST /api/v1/me/password` changes the password and revokes every other session.
+Passwords are bcrypt hashes and only SHA-256 token hashes are persisted. Sessions live in the `alfa_session` cookie (`SESSION_COOKIE_NAME`) or in an `Authorization: Bearer` header. The first registered user becomes `admin`, later users become `analyst`; granting and revoking company access through `/api/v1/access` requires `admin`. Login is rate-limited (`IDENTITY_LOGIN_MAX_ATTEMPTS` per `IDENTITY_LOGIN_WINDOW`), and expired sessions are pruned in the background. `PATCH /api/v1/me` updates the email and the primary company, `POST /api/v1/me/password` changes the password and revokes every other session. The gateway uses `X-Internal-Token` with `IDENTITY_INTERNAL_TOKEN` for the internal membership call after company creation; set it explicitly outside the demo.
 
-A company has an owner and members. The creator is the owner and can add or remove other registered users by email through `/api/v1/companies/{id}/members`. Members see the roster read-only. The last owner cannot be removed, and removing a member clears that member's primary company if it pointed at this company.
+A company has an owner and members. The creator is the owner and can add or remove other registered users by email and change their roles through `/api/v1/companies/{id}/members`. Members see the roster read-only. The last owner cannot be removed or demoted, and removing a member clears that member's primary company if it pointed at this company.
 
 Registration is controlled by `IDENTITY_REGISTRATION_ENABLED`. It is `true` in the demo `.env` so `scripts/bootstrap-users.sh` can create the demo accounts; set it to `false` after bootstrapping a real deployment.
 
@@ -317,10 +317,10 @@ scripts/            dev, demo, migrate, seed, bootstrap-users, smoke, gen
 
 The gateway validates the session against identity and never trusts the client:
 
-- Visibility is membership-based for every role: a user sees only the companies in `company_access`. The `admin` role does not bypass company checks.
-- Each membership has a role, `owner` or `member`. The creator of a company becomes its owner and can add or remove other users by email and edit the company fields. Members can view the company and its roster but cannot manage or edit it. The last owner cannot be removed.
-- System admins keep global rights for documents and for `/api/v1/access/grant|revoke`; these grants accept an optional `role` so an owner can be assigned.
-- The company list is filtered by forwarding the membership ids to the company service; a detail request for a company outside that set returns `404`.
+- Visibility is membership-based for every role: a user sees only the companies in `company_access`. The `admin` role does not bypass the company list.
+- Each membership has a role, `owner` or `member`. The creator of a company becomes its owner and can add, remove or change the role of other users by email and edit the company fields. Members can view the company and its roster but cannot manage or edit it. The last owner cannot be removed or demoted.
+- System admins keep global rights for documents, for `/api/v1/access/grant|revoke` and for company management by id; these grants accept an optional `role` so an owner can be assigned. An admin can read a company detail to edit or manage it, but the company list stays membership-filtered.
+- The company list is filtered by forwarding the membership ids to the company service; a detail request for a company outside that set returns `404` to a regular user.
 - `/api/v1/feed` and `/api/v1/insights/*` also require a session. The feed checks `company_id`; job creation checks the body and job reads check the stored `company_id`, so a forbidden company returns `404`.
 - `/api/v1/documents*` requires an admin session. `/api/v1/news` and `/api/v1/search` are public.
 - Company, content, insight and identity ports are published on `127.0.0.1` for local debugging. Only the gateway is reachable externally, so public traffic must go through it.

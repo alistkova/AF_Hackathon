@@ -242,7 +242,7 @@ components:
           maxLength: 200
         inn:
           type: string
-          pattern: "^([0-9]{10}|[0-9]{12})$"
+          pattern: "^([0-9]{10}|[0-9]{12})?$"
         industry:
           type: string
         region:
@@ -253,7 +253,7 @@ components:
           type: string
         revenue:
           type: string
-          pattern: "^[0-9]+$"
+          pattern: "^[0-9]*$"
     CompanyCreate:
       type: object
       required: [name]
@@ -265,7 +265,7 @@ components:
         inn:
           type: string
           description: 10 or 12 digits.
-          pattern: "^([0-9]{10}|[0-9]{12})$"
+          pattern: "^([0-9]{10}|[0-9]{12})?$"
         industry:
           type: string
         region:
@@ -277,7 +277,7 @@ components:
         revenue:
           type: string
           description: Numeric string in rubles.
-          pattern: "^[0-9]+$"
+          pattern: "^[0-9]*$"
         client_type:
           type: string
         okved_code:

@@ -1,12 +1,15 @@
 package identity
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
 	"github.com/alfa-hack/alfa-hack/internal/platform/httpx"
 	"github.com/gin-gonic/gin"
 )
+
+const internalTokenHeader = "X-Internal-Token"
 
 func AuthMiddleware(store Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -34,6 +37,21 @@ func AuthMiddleware(store Store) gin.HandlerFunc {
 func RequireAdmin() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.GetString("role") != RoleAdmin {
+			httpx.Error(c, http.StatusForbidden, "forbidden", "Недостаточно прав")
+			return
+		}
+		c.Next()
+	}
+}
+
+func RequireInternalToken(expected string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if expected == "" {
+			httpx.Error(c, http.StatusServiceUnavailable, "internal_disabled", "Внутренний API отключён")
+			return
+		}
+		provided := c.GetHeader(internalTokenHeader)
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
 			httpx.Error(c, http.StatusForbidden, "forbidden", "Недостаточно прав")
 			return
 		}

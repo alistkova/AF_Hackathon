@@ -24,14 +24,16 @@ type User struct {
 }
 
 type Client struct {
-	baseURL string
-	http    *http.Client
+	baseURL       string
+	internalToken string
+	http          *http.Client
 }
 
-func NewClient(baseURL string) *Client {
+func NewClient(baseURL, internalToken string) *Client {
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		http:    &http.Client{Timeout: 3 * time.Second},
+		baseURL:       strings.TrimRight(baseURL, "/"),
+		internalToken: internalToken,
+		http:          &http.Client{Timeout: 3 * time.Second},
 	}
 }
 
@@ -89,6 +91,9 @@ func (c *Client) AddMembership(ctx context.Context, userID, companyID, role stri
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
+	if c.internalToken != "" {
+		request.Header.Set("X-Internal-Token", c.internalToken)
+	}
 
 	response, err := c.http.Do(request)
 	if err != nil {

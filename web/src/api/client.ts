@@ -66,27 +66,34 @@ export const api = {
     }).then((session) => session.user),
   logout: () => requestVoid("/api/v1/auth/logout", { method: "POST" }),
   companies: () => request<{ items: Company[] }>("/api/v1/companies"),
-  company: (id: string) => request<Company>(`/api/v1/companies/${id}`),
+  company: (id: string) => request<Company>(`/api/v1/companies/${encodeURIComponent(id)}`),
   createCompany: (input: CompanyCreateInput) =>
     request<Company>("/api/v1/companies", {
       method: "POST",
       body: JSON.stringify(input),
     }),
   updateCompany: (id: string, input: CompanyCreateInput) =>
-    request<Company>(`/api/v1/companies/${id}`, {
+    request<Company>(`/api/v1/companies/${encodeURIComponent(id)}`, {
       method: "PUT",
       body: JSON.stringify(input),
     }),
   myMemberships: () => request<{ items: Membership[] }>("/api/v1/me/memberships"),
   companyMembers: (id: string) =>
-    request<{ items: CompanyMember[] }>(`/api/v1/companies/${id}/members`),
+    request<{ items: CompanyMember[] }>(`/api/v1/companies/${encodeURIComponent(id)}/members`),
   addCompanyMember: (id: string, email: string) =>
-    request<CompanyMember>(`/api/v1/companies/${id}/members`, {
+    request<CompanyMember>(`/api/v1/companies/${encodeURIComponent(id)}/members`, {
       method: "POST",
       body: JSON.stringify({ email }),
     }),
+  updateCompanyMember: (id: string, userId: string, role: CompanyMember["role"]) =>
+    requestVoid(`/api/v1/companies/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    }),
   removeCompanyMember: (id: string, userId: string) =>
-    requestVoid(`/api/v1/companies/${id}/members/${userId}`, { method: "DELETE" }),
+    requestVoid(`/api/v1/companies/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, {
+      method: "DELETE",
+    }),
   feed: (companyId: string, filters: FeedFilters = {}, limit = 30, offset = 0) => {
     const params = new URLSearchParams({
       company_id: companyId,
