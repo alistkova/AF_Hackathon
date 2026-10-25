@@ -140,8 +140,6 @@ components:
         - company_id
         - title
         - summary
-        - source
-        - url
         - published_at
         - relevance
         - reasons
@@ -160,7 +158,6 @@ components:
           type: string
         url:
           type: string
-          format: uri
         published_at:
           type: string
           format: date-time

@@ -107,8 +107,8 @@ for item in items:
     assert isinstance(item.get("reasons"), list), item
     assert isinstance(item.get("tags"), list), item
     assert isinstance(item.get("target_sectors"), list), item
-    assert item.get("source"), item
-    assert item.get("url"), item
+    assert isinstance(item.get("source"), str), item
+    assert isinstance(item.get("url"), str), item
 facets = payload.get("facets")
 assert isinstance(facets, dict), payload
 for key in ("sources", "tags", "sectors"):

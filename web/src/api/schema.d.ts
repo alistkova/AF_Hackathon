@@ -338,9 +338,8 @@ export interface components {
             company_id: string;
             title: string;
             summary: string;
-            source: string;
-            /** Format: uri */
-            url: string;
+            source?: string;
+            url?: string;
             /** Format: date-time */
             published_at: string;
             relevance: number;
