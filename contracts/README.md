@@ -66,6 +66,11 @@ are turned into text by `pdftotext`. Both ingestion endpoints return a per-docum
 `services/identity` owns users, sessions and company access. Cookies and bearer tokens are
 described in `contracts/openapi/identity.yaml`. The gateway forwards `/api/v1/auth`,
 `/api/v1/me` and `/api/v1/access` to it; `/api/v1/companies` stays with the company service.
+The profile uses `GET/PATCH /api/v1/me`, `POST /api/v1/me/password`,
+`GET /api/v1/me/memberships` and the company member endpoints. Company visibility is
+membership-based for every role; company creation is orchestrated by the gateway and records
+the creator as the owner through the internal membership endpoint. Company edits use
+`PUT /api/v1/companies/{id}` and are allowed only for the owner or a system admin.
 
 ## RAG chunk API
 

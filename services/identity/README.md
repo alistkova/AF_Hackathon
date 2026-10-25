@@ -20,7 +20,16 @@ requests to it.
   enables it so the bootstrap script can create accounts.
 - The client may authenticate with the session cookie or with `Authorization: Bearer <token>`.
 - The first registered user becomes `admin`; every later registration becomes `analyst`.
-  Granting and revoking company access requires `admin`.
+  Granting and revoking company access through `/api/v1/access` requires `admin`.
+- Membership is the only source of company access. Every role, including `admin`, sees only
+  the companies in `company_access`; the admin role does not bypass company checks.
+- A membership has a role, `owner` or `member`. The creator of a company becomes its owner.
+  Owners can add existing users by email and remove members; members see the roster read-only.
+  The last owner cannot be removed. System admins can manage any company.
+- A signed-in user can update their email and primary company and change their password.
+- Changing the password revokes every other session of the user; the session that performed
+  the change stays valid.
+- Removing a membership clears the user's primary company when it pointed at that company.
 
 ## Endpoints
 
@@ -30,16 +39,29 @@ requests to it.
 | POST   | `/api/v1/auth/register`  | public*       | Create a user (when enabled)           |
 | POST   | `/api/v1/auth/login`     | public        | Open a session and set the cookie      |
 | POST   | `/api/v1/auth/logout`    | public        | Revoke the token if present, clear cookie |
-| GET    | `/api/v1/me`             | session       | Current user id, email and role        |
-| GET    | `/api/v1/me/companies`   | session       | Company ids the user may read          |
-| POST   | `/api/v1/access/grant`   | admin         | Grant a user access to a company       |
-| POST   | `/api/v1/access/revoke`  | admin         | Revoke a user's access to a company    |
+| GET    | `/api/v1/me`             | session       | Current user id, email, role and primary company |
+| PATCH  | `/api/v1/me`             | session       | Change email and/or primary company    |
+| POST   | `/api/v1/me/password`    | session       | Change the password, revoke other sessions |
+| GET    | `/api/v1/me/companies`   | session       | Membership ids for the current user    |
+| GET    | `/api/v1/me/memberships` | session       | Membership ids and roles               |
+| GET    | `/api/v1/companies/{companyId}/members` | member or admin | Company roster |
+| POST   | `/api/v1/companies/{companyId}/members` | owner or admin | Add an existing user by email |
+| DELETE | `/api/v1/companies/{companyId}/members/{userId}` | owner or admin | Remove a member |
+| POST   | `/api/v1/access/grant`   | admin         | Grant a membership with an optional role |
+| POST   | `/api/v1/access/revoke`  | admin         | Revoke a membership                   |
+| POST   | `/api/v1/internal/memberships` | internal | Record the creator as owner after company creation |
 
 The schemas are in `contracts/openapi/identity.yaml`.
 
+`*` — registration must be enabled for `/auth/register`.
+
 `/api/v1/me/companies` lives under `/me` on purpose: `/api/v1/companies` belongs to the
-company service and is routed there by the gateway. It lists explicit grants; admins are not
-enumerated because the gateway bypasses the company check for them.
+company service and is routed there by the gateway. It lists memberships and is what the
+gateway uses for access checks.
+
+`/api/v1/internal/memberships` is called by the gateway after the company service creates a
+company. It is not routed through the public gateway and is only reachable on the internal
+network.
 
 ## Requirements
 
@@ -92,10 +114,15 @@ curl -fsS -b /tmp/alfa.jar "$BASE/api/v1/me"
 
 curl -fsS -b /tmp/alfa.jar -X POST "$BASE/api/v1/access/grant" \
   -H 'Content-Type: application/json' \
-  -d '{"user_id":"usr_...","company_id":"magnit"}'
+  -d '{"user_id":"usr_...","company_id":"magnit","role":"owner"}'
 
-curl -fsS -b /tmp/alfa.jar "$BASE/api/v1/me/companies"
-# {"items":["magnit"]}
+curl -fsS -b /tmp/alfa.jar "$BASE/api/v1/me/memberships"
+# {"items":[{"company_id":"magnit","role":"owner"}]}
+
+curl -fsS -b /tmp/alfa.jar "$BASE/api/v1/companies/magnit/members"
+curl -fsS -b /tmp/alfa.jar -X POST "$BASE/api/v1/companies/magnit/members" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"colleague@example.com"}'
 
 curl -fsS -b /tmp/alfa.jar -X POST "$BASE/api/v1/auth/logout"
 ```
