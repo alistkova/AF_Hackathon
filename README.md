@@ -1,191 +1,120 @@
-# Альфа Хак 2026 — новостная аналитика
+# Альфа Хак 2026 — новостная аналитика для крупного бизнеса
 
-Персональная лента событий для крупного бизнеса: что случилось, почему это важно для компании, риски и возможности, позиция банка, вывод AI и источники.
+Персональная лента событий с разбором влияния на конкретную компанию. Пользователь видит не пересказ новости, а ответ на вопрос «что это значит для моего бизнеса»: подтверждённые факты и гипотезы со ссылками на источники, риски и возможности, позицию Альфа-Банка (только если она подтверждена аналитикой банка) и вывод AI.
 
-## Architecture
+Решение — монорепозиторий из шести сервисов, одного фронтенда и Python-агента. Всё поднимается одной командой на ноутбуке, без GPU и без локальных генеративных моделей: LLM вызывается через OpenAI-совместимый API организаторов.
 
-```text
-Browser
-   |  HTTP + SSE
-   v
-Gateway (Go/Gin)
-   |-- Identity (Go) -> PostgreSQL identity_db
-   |-- Company (Go)  -> PostgreSQL company_db
-   |-- Content (Go)  -> PostgreSQL content_db + local document storage
-   |-- Insight (Go)  -> PostgreSQL insight_db
-   |                      |
-   |                      +-- Agent (Python/FastAPI, SSE)
-   +-- Web (React + TypeScript + Tailwind)
-```
+> Дисклеймер: материалы решения носят информационный характер и не являются индивидуальной инвестиционной рекомендацией.
 
-One PostgreSQL instance with separate databases and roles per service. Redis is provisioned for later queues; MinIO remains an optional Compose profile, while the content service stores raw PDFs on the `contentdata` volume. The agent is stateless: insight owns retrieval, persistence, retries and the browser SSE stream.
-The agent includes a RAG system for Russian financial news PDFs with incremental updates.
+## Содержание
 
-## Quick start
+- [Что делает продукт](#что-делает-продукт)
+- [Быстрый старт](#быстрый-старт)
+- [Демо-аккаунты и данные](#демо-аккаунты-и-данные)
+- [Сценарий демонстрации](#сценарий-демонстрации)
+- [Требования к окружению](#требования-к-окружению)
+- [Запуск для разработки](#запуск-для-разработки)
+- [Переменные окружения](#переменные-окружения)
+- [Архитектура](#архитектура)
+- [Как устроены данные](#как-устроены-данные)
+- [Лента и ранжирование](#лента-и-ранжирование)
+- [Разбор события: поток SSE](#разбор-события-поток-sse)
+- [Агент и работа с моделями](#агент-и-работа-с-моделями)
+- [RAG по документам](#rag-по-документам)
+- [Безопасность и модель доступа](#безопасность-и-модель-доступа)
+- [Наблюдаемость и эксплуатация](#наблюдаемость-и-эксплуатация)
+- [Тесты, линт и CI](#тесты-линт-и-ci)
+- [Команды](#команды)
+- [Структура репозитория](#структура-репозитория)
+- [Ограничения и планы](#ограничения-и-планы)
+- [Troubleshooting](#troubleshooting)
+- [Ссылки](#ссылки)
 
-The code lives in this repository folder, next to the read-only `design/` materials. Run all commands from the repository root.
+## Что делает продукт
 
-### Laptop demo, Docker only
+| Возможность | Как это работает |
+| --- | --- |
+| Лента событий по компании | Insight собирает новости из content-сервиса и ранжирует их по профилю компании: название, отрасль, регион, свежесть. У каждого события есть `relevance` и человекочитаемые `reasons`. |
+| Фильтры и фасеты | Источники, темы, отрасли, период, сортировка, поиск. Фасеты считаются по несфильтрованному окну, поэтому список вариантов не «схлопывается» после выбора. |
+| Разбор события | Кнопка «Разобрать событие» запускает задачу: агент строит структурированный инсайт и присылает прогресс по SSE. |
+| Прозрачность выводов | Каждый факт и гипотеза несёт `source_ids`; валидатор не даёт вернуть вывод без источника. В панели разбора источники пронумерованы и кликабельны. |
+| Позиция банка отделена от AI | `bank_view` показывается только при `used=true`, то есть когда тезис опирается на аналитику Альфа-Банка. Иначе блок скрывается, а не заполняется «общими словами». |
+| Доступ по компаниям | Пользователь видит только компании, в которых состоит. Владелец компании управляет участниками, системный администратор — документами и грантами. |
+| Профиль компании | Отрасль, регион, выручка, ОКВЭД, банковские продукты, люди и связи: группы компаний, общие люди, контрагенты по платежам. |
+
+Скриншоты текущего интерфейса (перегенерируются `scripts/screenshots.mjs`, см. [docs/screenshots](docs/screenshots/README.md)): [лента](docs/screenshots/02-feed.png), [фильтры](docs/screenshots/03-filters.png), [разбор события](docs/screenshots/04-analysis.png), [профиль](docs/screenshots/05-profile.png), [участники компании](docs/screenshots/06-members.png).
+
+## Быстрый старт
+
+Нужен только Docker с Compose v2. Все команды — из корня репозитория.
 
 ```bash
 cp .env.example .env
 make demo
 ```
 
-Open <http://localhost:3000>. The demo starts Postgres, Redis, all Go services, the Python agent and the web app, then seeds companies, people, payments and news. MinIO is an optional Compose profile because its public registry requires separate access; the content service stores raw PDFs on a local volume instead.
+Что делает `make demo`:
 
-`make demo` also creates two demo accounts and prints them:
+1. собирает образы всех сервисов и web;
+2. поднимает PostgreSQL (с pgvector), Redis, все Go-сервисы, Python-агента и web;
+3. ждёт health-чеков;
+4. загружает демо-данные: 7 компаний, людей, платежи и 4 новости;
+5. создаёт две демо-учётные записи и печатает их.
 
-| Account | Role | Sees |
-| --- | --- | --- |
-| `demo-admin@alfa.local` | `admin` | member of `magnit`, `severstal`, `sber` |
-| `demo-client@alfa.local` | `analyst` | owner of `magnit` and `severstal` |
+Первый запуск занимает несколько минут: собираются Go-бинарники, фронтенд и Python-образ агента. Повторный — секунды.
 
-The password for both is `demo-password` (`DEMO_PASSWORD`). Override the emails with `DEMO_ADMIN_EMAIL` and `DEMO_CLIENT_EMAIL`, the admin's companies with `DEMO_ADMIN_COMPANIES` and the client's companies with `DEMO_CLIENT_COMPANIES`. The client becomes the owner of its companies, the admin a member. `make demo-users` recreates the accounts on an already running stack; it reads the full company catalogue from `COMPANY_URL` (default `http://localhost:8081`) so the client can be granted companies the admin does not belong to.
+Откройте <http://localhost:3000> и войдите как `demo-client@alfa.local` / `demo-password`.
 
-Reset an empty demo:
+Проверка, что стек жив:
+
+```bash
+curl -s http://localhost:8080/healthz
+# {"service":"gateway","status":"ok"}
+# если меняли GATEWAY_PORT — подставьте свой порт
+
+curl -s http://localhost:3000/api/v1/news?limit=1 | head -c 200
+```
+
+Если порт занят, задайте в `.env` другой: `GATEWAY_PORT=18080`, `WEB_PORT=13000`. Эти же значения используют `make demo`, `make smoke` и `scripts/bootstrap-users.sh`.
+
+Пересоздать демо с пустой базой:
 
 ```bash
 make demo-reset
 ```
 
-If host port 8080 is already in use, set `GATEWAY_PORT=18080` in `.env`; `make demo`, `make smoke` and the printed URL use that value. `WEB_PORT` works the same way.
-
-### Without Nix
-
-Install Go 1.26+, Node 24+, pnpm 11+, Python 3.13+, uv, golangci-lint and ruff. Docker is required for infrastructure and the full demo.
+Пересоздать только учётные записи на уже поднятом стеке:
 
 ```bash
-cp .env.example .env
-make bootstrap
-make infra
-make dev
+make demo-users
 ```
 
-### Nix development shell
+## Демо-аккаунты и данные
 
-```bash
-nix develop
-cp .env.example .env
-make bootstrap
-make infra
-make dev
+| Аккаунт | Роль | Компании |
+| --- | --- | --- |
+| `demo-admin@alfa.local` | `admin` | участник `magnit`, `severstal`, `sber` |
+| `demo-client@alfa.local` | `analyst` | владелец `magnit`, `severstal` |
+
+Пароль у обоих — `demo-password`. Переопределяется в `.env`:
+
+```dotenv
+DEMO_ADMIN_EMAIL=demo-admin@alfa.local
+DEMO_CLIENT_EMAIL=demo-client@alfa.local
+DEMO_PASSWORD=demo-password
+DEMO_ADMIN_COMPANIES="magnit severstal sber"
+DEMO_CLIENT_COMPANIES="magnit severstal"
 ```
 
-`make dev` starts infrastructure in Docker and services on the host:
+Важно: роли не дают обхода списка компаний. Администратор тоже видит только те компании, где он участник; глобальные права у него есть лишь на документы, гранты `/api/v1/access` и управление компанией по id.
 
-- web: <http://localhost:5173>
-- gateway: <http://localhost:8080>
-- company: <http://localhost:8081>
-- content: <http://localhost:8082>
-- insight: <http://localhost:8083>
-- agent: <http://localhost:8090>
+Демо-данные лежат в `seed/`:
 
-The dev shell provides Go, Node, pnpm, Python, uv, ruff, PostgreSQL client, Redis client, MinIO client and Docker is used for infrastructure.
+- `companies.csv` — 7 компаний: Альфа-Банк, Магнит, Тандер, Яндекс, Северсталь, Sber, ЛУКОЙЛ;
+- `people.csv` — люди компаний, `payments.csv` — платежи для графа связей;
+- `news/sample.json` — 4 новости (РБК, Коммерсантъ, Ведомости, Интерфакс) с тегами и отраслями.
 
-### Agent development
-
-```bash
-nix develop
-cd services/agent
-uv sync
-uv run uvicorn app.main:app --reload --port 8090
-```
-
-`AGENT_MODE=stub` works without an LLM. Set `AGENT_MODE=live`, `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL` for an OpenAI-compatible endpoint.
-
-### RAG system development
-
-The agent includes a RAG system for Russian financial news (ALFA_Russian_Steels format) at `services/agent/app/rag_system/`.
-
-The agent computes embeddings locally and stores chunks through the content service (`CONTENT_URL`, default `http://localhost:8082`). The content service owns the `rag_chunks` table in `content_db` and applies `company_id`, `sector` and `published_at` filters before the similarity search, so the agent never connects to `content_db`. Start the stack or run `make migrate` to create the table.
-
-OCR for scanned PDFs is optional: install the `tesseract` binary with Russian language data, run `cd services/agent && uv sync --extra ocr` (or `make rag-install`) and set `RAG_USE_OCR=True`.
-
-```bash
-# Install RAG dependencies (embeddings need the hf extra)
-make rag-install
-
-# Build index from PDFs in services/agent/data/
-make rag-build
-
-# Query the RAG system
-make rag-query Q="ваш вопрос"
-
-# Query with metadata filters
-make rag-search Q="выручка" COMPANY_ID=magnit AFTER=2026-01-01
-
-# Incremental update for new PDFs
-make rag-update
-
-# Show index statistics
-make rag-stats
-```
-
-Requires Ollama with models (qwen2.5:32b, DeepSeek, etc.). Set `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env`.
-
-## Commands
-
-```bash
-make infra       # postgres, redis
-make infra-minio # optional MinIO profile
-make migrate     # run service migrations
-make seed        # import companies and news fixtures
-make dev         # native services + Docker infrastructure
-make demo        # full Compose stack
-make test        # Go, web and agent tests
-make lint        # gofmt, golangci-lint, ESLint, TypeScript, ruff
-make smoke       # end-to-end SSE smoke test
-make gen         # generate contract types
-
-# RAG system
-make rag-install  # install RAG dependencies
-make rag-build    # build index from PDFs
-make rag-update   # incremental update
-make rag-query Q="question"  # query RAG
-make rag-search Q="query" COMPANY_ID=magnit  # search chunks without the LLM
-make rag-list COMPANY_ID=magnit  # list chunks by metadata
-make rag-stats    # index statistics
-make rag-clean    # remove the local processed-files cache (vectors stay in the content service)
-```
-
-## Service boundaries
-
-- Web talks only to gateway.
-- Every service owns its database and role. No cross-database queries.
-- Services do not import each other's `internal` packages.
-- The agent only reasons over the evidence it receives and returns source IDs from that evidence.
-- Public SSE goes through gateway -> insight. Agent SSE is internal.
-
-## Company API
-
-The company service owns company profiles in `company_db`. Clients call it through the gateway:
-
-```bash
-curl -s -b /tmp/alfa.jar localhost:8080/api/v1/companies
-curl -s -b /tmp/alfa.jar localhost:8080/api/v1/companies/magnit
-curl -s -b /tmp/alfa.jar localhost:8080/api/v1/companies/magnit/relations
-
-curl -s -b /tmp/alfa.jar -X POST localhost:8080/api/v1/companies \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"ООО «Ромашка»","inn":"7701234567","industry":"Ритейл","region":"Москва"}'
-
-curl -s -b /tmp/alfa.jar localhost:8080/api/v1/companies/cmp_123/members
-
-curl -s -b /tmp/alfa.jar -X PUT localhost:8080/api/v1/companies/cmp_123 \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"ООО «Ромашка Плюс»","inn":"7701234567","industry":"Ритейл","region":"Москва","city":"Москва","revenue":"2000000","description":"Обновлённое описание"}'
-```
-
-`GET /api/v1/companies` returns `{"items":[...]}` ordered by name and limited to the companies
-the current user belongs to. `GET /api/v1/companies/{companyId}` returns one company with
-`people` and `relations`, or a `404` error; relations resolve company groups, shared people and
-payment counterparties from `company_db`. `POST /api/v1/companies` creates a company, makes the
-caller its owner and returns `201`. `PUT /api/v1/companies/{companyId}` updates the editable
-fields and is allowed only for the company owner or a system admin. The member endpoints are
-described in the identity section below.
-
-Demo data is loaded from `seed/companies.csv` by `make seed`. The hackathon datasets are imported with the same command:
+Полные датасеты хакатона импортируются тем же CLI:
 
 ```bash
 go run ./services/company/cmd/seed \
@@ -194,141 +123,385 @@ go run ./services/company/cmd/seed \
   -payments path/to/payments.csv
 ```
 
-Service details, the data model, CSV format and local debugging steps are in [services/company/README.md](services/company/README.md). The service contract is [contracts/openapi/company.yaml](contracts/openapi/company.yaml).
+## Сценарий демонстрации
 
-## Identity API
+1. Откройте <http://localhost:3000> — экран входа ([скриншот](docs/screenshots/01-login.png)).
+2. Войдите как `demo-client@alfa.local` / `demo-password`.
+3. В левой колонке выберите компанию «Магнит» — лента перестроится под её профиль ([скриншот](docs/screenshots/02-feed.png)).
+4. Раскройте «Фильтры»: источники, темы, отрасли, период, сортировка, поиск. Выберите «Ведомости» или тег `логистика` и нажмите «Применить» ([скриншот](docs/screenshots/03-filters.png)).
+5. Сбросьте фильтры и нажмите «Разобрать событие» на новости про Магнит.
+6. Дождитесь результата: шаги (поиск источников, оценка влияния, анализ AI, проверка источников), затем панель разбора с фактами, гипотезами, рисками, возможностями, выводом AI и источниками ([скриншот](docs/screenshots/04-analysis.png)).
+7. Обратите внимание: у каждого тезиса есть номера источников; блок «Позиция банка» виден только когда `bank_view.used=true`, то есть когда в evidence есть аналитика Альфа-Банка.
+8. Переключитесь на «Северсталь» — лента и профиль компании меняются ([скриншот профиля](docs/screenshots/05-profile.png)).
+9. Откройте «Участники»: владелец может добавлять пользователей по email и менять роли ([скриншот](docs/screenshots/06-members.png)).
+10. Войдите как `demo-admin@alfa.local` и убедитесь, что список компаний у него другой — это проверка модели доступа, а не только UI-фильтр.
 
-The identity service owns users, sessions and company access in `identity_db`. The gateway forwards `/api/v1/auth`, `/api/v1/me` and `/api/v1/access` to it:
+Если агент запущен в `AGENT_MODE=live`, шаги займут больше времени (внешний LLM), появится шаг «Догрузка контекста» (RAG). В демо по умолчанию `AGENT_MODE=stub`: детерминированный ответ без внешних вызовов.
 
-```bash
-curl -s -X POST localhost:8080/api/v1/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"owner@example.com","password":"secret-pass"}'
+## Требования к окружению
 
-curl -s -c /tmp/alfa.jar -X POST localhost:8080/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"owner@example.com","password":"secret-pass"}'
+- Docker 24+ с Compose v2 (основной путь).
+- 8 ГБ RAM: PostgreSQL, 4 Go-сервиса, web и Python-агент.
+- 10 ГБ свободного диска на образы и volume PostgreSQL.
+- Свободные порты: `3000` (web), `8080` (gateway), `8081`, `8082`, `8083`, `8086` (сервисы, только localhost), `5432` (PostgreSQL), `6379` (Redis).
 
-curl -s -b /tmp/alfa.jar localhost:8080/api/v1/me
-curl -s -b /tmp/alfa.jar localhost:8080/api/v1/me/companies
+Для разработки без Docker дополнительно: Go 1.26+, Node 24+, pnpm 11+, Python 3.13+, uv, golangci-lint, ruff. На NixOS всё это даёт `nix develop`.
 
-curl -s -b /tmp/alfa.jar -X PATCH localhost:8080/api/v1/me \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"new@example.com","primary_company_id":"magnit"}'
+Интернет нужен только для первой сборки образов и для `AGENT_MODE=live` (вызов LLM через API организаторов). Демо в `stub`-режиме работает полностью офлайн после сборки.
 
-curl -s -b /tmp/alfa.jar -X POST localhost:8080/api/v1/me/password \
-  -H 'Content-Type: application/json' \
-  -d '{"current_password":"secret-pass","new_password":"next-secret"}'
+## Запуск для разработки
 
-curl -s -b /tmp/alfa.jar localhost:8080/api/v1/me/memberships
-curl -s -b /tmp/alfa.jar localhost:8080/api/v1/companies/magnit/members
-curl -s -b /tmp/alfa.jar -X POST localhost:8080/api/v1/companies/magnit/members \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"colleague@example.com"}'
-```
-
-Passwords are bcrypt hashes and only SHA-256 token hashes are persisted. Sessions live in the `alfa_session` cookie (`SESSION_COOKIE_NAME`) or in an `Authorization: Bearer` header. The first registered user becomes `admin`, later users become `analyst`; granting and revoking company access through `/api/v1/access` requires `admin`. Login is rate-limited (`IDENTITY_LOGIN_MAX_ATTEMPTS` per `IDENTITY_LOGIN_WINDOW`), and expired sessions are pruned in the background. `PATCH /api/v1/me` updates the email and the primary company, `POST /api/v1/me/password` changes the password and revokes every other session. The gateway uses `X-Internal-Token` with `IDENTITY_INTERNAL_TOKEN` for the internal membership call after company creation; set it explicitly outside the demo.
-
-A company has an owner and members. The creator is the owner and can add or remove other registered users by email and change their roles through `/api/v1/companies/{id}/members`. Members see the roster read-only. The last owner cannot be removed or demoted, and removing a member clears that member's primary company if it pointed at this company.
-
-Registration is controlled by `IDENTITY_REGISTRATION_ENABLED`. It is `true` in the demo `.env` so `scripts/bootstrap-users.sh` can create the demo accounts; set it to `false` after bootstrapping a real deployment.
-
-`/api/v1/companies` requires the same session and returns only the companies the user belongs to, including for `admin`. There is no global company catalog. `POST /api/v1/companies` creates a company and records the creator as its owner. `/api/v1/me/companies` lists membership ids and `/api/v1/me/memberships` adds the roles. See [Access model](#access-model).
-
-Service details and configuration are in [services/identity/README.md](services/identity/README.md). The service contract is [contracts/openapi/identity.yaml](contracts/openapi/identity.yaml).
-
-## Content API
-
-`GET /api/v1/news` returns the AI team news format (`document_id`, `news_id`, `title`, `published_at`, `source_name`, `source_url`, `full_text`, `tags`, `target_sectors`) and accepts `kind`, `sector`, `tag`, `source`, `from`, `to`, `limit` and `offset`. The total is returned in `X-Total-Count`.
-
-Ingestion goes through `POST /api/v1/documents` (JSON) or `POST /api/v1/documents/pdf` (multipart) and requires an admin session. Both normalise the text, reject duplicates by canonical URL and by a content hash, and split the body into overlapping chunks. Ranked search across news and PDFs is `GET /api/v1/search?q=` and is public.
+Инфраструктура в Docker, сервисы на хосте:
 
 ```bash
-curl -s -b /tmp/alfa.jar -X POST localhost:8080/api/v1/documents -H 'Content-Type: application/json' \
-  -d '{"items":[{"news_id":"n1","title":"Ставка","full_text":"..."}]}'
-
-curl -s -b /tmp/alfa.jar -X POST localhost:8080/api/v1/documents/pdf -F 'file=@material.pdf' -F 'source_name=Альфа-Банк'
-
-curl -s 'localhost:8080/api/v1/search?q=ключевая%20ставка'
+cp .env.example .env
+make bootstrap   # go mod download, pnpm install, uv sync, .env
+make infra       # postgres + redis
+make migrate     # миграции всех сервисов
+make seed        # демо-компании, люди, платежи, новости
+make dev         # сервисы + web на хосте
 ```
 
-PDF text extraction uses `pdftotext` from poppler-utils, which the content image installs. Raw files land in the `contentdata` volume. The schema is in `contracts/openapi/content.yaml`, the details are in [services/content/README.md](services/content/README.md).
+Порты при `make dev`: web <http://localhost:5173>, gateway 8080, company 8081, content 8082, insight 8083, identity 8086, agent 8090.
 
-RAG chunks are stored by the content service as well: `POST /api/v1/rag/chunks` upserts embedded chunks, `POST /api/v1/rag/chunks/search` and `POST /api/v1/rag/chunks/list` query them by metadata, `GET /api/v1/rag/chunks/count` counts them and `DELETE /api/v1/rag/chunks` clears the table. The agent uses these endpoints and never opens `content_db`.
-
-## Feed API
-
-`GET /api/v1/feed?company_id=magnit` returns the company feed. Insight loads the profile from the company service, loads recent news from `GET /api/v1/news?kind=news`, and ranks items by company name, industry, region and recency. Every item carries `relevance` and human-readable `reasons`, so the web client can explain why the event is in the feed. The feed accepts `limit` (default 30, max 50) and `offset`; the response contains `items`, `total` and `facets`.
-
-Filters are applied after ranking: `source`, `tag` and `sector` are repeatable (or comma-separated), `q` searches title, summary, source, tags and sectors, and `from` / `to` accept `2006-01-02` or RFC3339. `sort` is `relevance` (default) or `date`. Facets contain unfiltered source, tag and sector counts so the client can keep filter options stable. `total` is the filtered count.
-
-Insight never reads `content_db`. The content service stays the source of truth for news, and the feed is ranked in memory per request. The news list is cached in insight for 30 seconds so filter changes do not refetch the content service every time; when the content service is unavailable the last cached list is served. Filters currently cover the latest 200 news items fetched from content; if that window becomes a limitation, the next step is pushing the same filters into the content query. News that matches the company profile is ranked first; everything else is kept after it with `relevance` `0.1` and the reason `Общая повестка`, so pagination and filters always cover the whole window. If there is no news at all, the feed is empty.
-
-## SSE contract
-
-Start a job:
+С NixOS то же самое, но окружение поднимается одной командой:
 
 ```bash
-curl -s -X POST localhost:8080/api/v1/insights/jobs \
-  -H 'Content-Type: application/json' \
-  -d '{"company_id":"magnit","event":{"id":"news-001","title":"Магнит расширяет логистику"}}'
+nix develop
+make bootstrap && make infra && make migrate && make seed && make dev
 ```
 
-Stream it:
+Отдельно агент:
 
 ```bash
-curl -N localhost:8080/api/v1/insights/jobs/<job_id>/events
+cd services/agent
+uv sync
+uv run uvicorn app.main:app --reload --port 8090
 ```
 
-The stream emits `status`, `step`, `result` and `error` events. `result` and `error` are terminal. Reconnect with `Last-Event-ID` to replay events after the last received sequence number.
+## Переменные окружения
 
-Contracts live in `contracts/`; SSE framing is documented in `contracts/README.md`.
+Полный список с дефолтами — в [`.env.example`](.env.example). Ключевые группы:
 
-## Repository layout
+| Переменная | Назначение | По умолчанию |
+| --- | --- | --- |
+| `GATEWAY_PORT`, `WEB_PORT` | Внешние порты | `8080`, `3000` |
+| `POSTGRES_USER/PASSWORD/DB`, `POSTGRES_PORT` | PostgreSQL | `postgres` / `postgres` / `postgres` / `5432` |
+| `COMPANY_DATABASE_URL`, `CONTENT_DATABASE_URL`, `INSIGHT_DATABASE_URL`, `IDENTITY_DATABASE_URL` | Отдельная БД и роль на каждый сервис | `*_svc:*@localhost:5432/*_db` |
+| `AGENT_MODE` | `stub` (без LLM) или `live` | `stub` |
+| `ANALYZER_MODE` | Кто ведёт разбор: `agent` или встроенный стаб insight | `agent` |
+| `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | OpenAI-совместимый API организаторов | пусто |
+| `LLM_FALLBACK_BASE_URL` | Резервный адрес, используется только если основной недоступен | пусто |
+| `AGENT_TIMEOUT`, `AGENT_STEP_DELAY` | Таймаут задачи и пауза между шагами стаба | `120s`, `350ms` |
+| `SESSION_COOKIE_NAME`, `SESSION_COOKIE_SECURE` | Cookie сессии | `alfa_session`, `false` |
+| `IDENTITY_SESSION_TTL`, `IDENTITY_SESSION_PRUNE_INTERVAL` | Время жизни и уборка сессий | `168h`, `1h` |
+| `IDENTITY_REGISTRATION_ENABLED` | Открыта ли регистрация | `true` (для демо) |
+| `IDENTITY_LOGIN_MAX_ATTEMPTS`, `IDENTITY_LOGIN_WINDOW` | Rate limit логина | `5`, `15m` |
+| `IDENTITY_INTERNAL_TOKEN` | Сервисный токен gateway → identity | `dev-internal-token` |
+| `METRICS_ENABLED`, `METRICS_DIR` | Метрики LLM (JSONL) | `true`, `services/agent/metrics` |
+| `ALFA_AGENT_STATE_DIR` | Каталог файлового состояния агента (бюджет) | `~/.alfa_agent` |
+| `RAG_INDEX_DIR`, `RAG_DATA_DIR`, `RAG_USE_OCR` | RAG CLI | `.rag/index`, `data`, `False` |
+
+Перед публичным развёртыванием обязательно задайте свои `POSTGRES_PASSWORD`, `IDENTITY_INTERNAL_TOKEN`, `SESSION_COOKIE_SECURE=true` и выключите `IDENTITY_REGISTRATION_ENABLED` после создания учётных записей.
+
+## Архитектура
+
+```mermaid
+flowchart LR
+  B["Браузер<br/>React 19 + TS + Tailwind"] -->|HTTP + SSE| W["web<br/>nginx"]
+  W -->|/api/*| G["gateway :8080<br/>Go · сессии · доступ · SSE relay"]
+  G --> I["identity :8086"]
+  G --> C["company :8081"]
+  G --> CT["content :8082"]
+  G --> IN["insight :8083"]
+  IN -->|внутренний SSE| A["agent :8090<br/>Python · FastAPI"]
+  A -->|RAG-обогащение| CT
+  I --- D1[("identity_db")]
+  C --- D2[("company_db")]
+  CT --- D3[("content_db<br/>pgvector")]
+  IN --- D4[("insight_db")]
+  CT --- V[("volume contentdata")]
+```
+
+То же текстом:
 
 ```text
-contracts/          OpenAPI + SSE event schemas
-services/gateway/   public BFF, proxying, SSE relay
-services/company/   companies, people, relations
-services/content/   documents and chunks
-services/identity/  users, sessions, company access
-services/insight/   feed, jobs, SSE, agent orchestration
-services/agent/     Python/FastAPI agent
-services/agent/app/rag_system/   RAG system for Russian financial news
-web/                React + TypeScript + Tailwind
-infra/              Postgres roles/databases, MinIO
-seed/               demo companies, people, payments and news
-scripts/            dev, demo, migrate, seed, bootstrap-users, smoke, gen
+Браузер ──HTTP/SSE──▶ web (nginx) ──/api/*──▶ gateway
+                                              ├─▶ identity  ─▶ identity_db
+                                              ├─▶ company   ─▶ company_db
+                                              ├─▶ content   ─▶ content_db (pgvector) + volume contentdata
+                                              └─▶ insight   ─▶ insight_db, SSE-стрим
+                                                     └──▶ agent (Python/FastAPI) ──RAG──▶ content
 ```
 
-## Current scaffold status
+Принципы, которые проверяются кодом и ревью:
 
-- M0 vertical slice: gateway, company, web, Compose, seed, smoke.
-- M1 complete: identity with sessions, per-user company access enforced in the gateway, CSV import of companies, people and payments, company profiles and relations.
-- SSE job flow works end to end with the Python stub agent.
-- Content owns news and PDF documents: ingestion with deduplication, chunking, full-text search and raw file storage.
-- The personal feed is ranked from content news by company name, industry, region and recency, with source, tag, search and period filters.
-- The ingestion worker is still a no-op; documents arrive through the API and the seed command.
-- Insight jobs are in-memory for now; `analysis_jobs`/`analysis_events` tables are reserved for durable persistence.
-- Identity is implemented: register, login, logout, `/me`, profile editing (email, primary company, password), memberships with owner/member roles, owner-managed company members and company creation.
-- The web profile at `#/profile` shows the account, the user's company context (industry, region, revenue, OKVED, bank products) and the companies the user belongs to; `#/companies/new` creates a company, `#/companies/{id}/edit` edits it and `#/companies/{id}/members` manages its members. `#/profile/edit` changes email, primary company and password.
+- **web общается только с gateway.** Остальные сервисы опубликованы на `127.0.0.1` для отладки; в Docker наружу смотрят только web и gateway.
+- **У каждого сервиса своя база и роль.** Кросс-базовых запросов нет: связь только через API.
+- **Никто не импортирует `internal` другого сервиса.**
+- **Insight владеет задачами, повторами и публичным SSE.** Агент не хранит состояние задачи и не отдаёт поток браузеру.
+- **Контракты — в `contracts/`.** Клиенты и типы генерируются из них (`make gen`).
 
-## Access model
+Порты внутри Compose:
 
-The gateway validates the session against identity and never trusts the client:
+| Сервис | Порт | Публикация |
+| --- | --- | --- |
+| web (nginx) | 80 | `${WEB_PORT}:80` |
+| gateway | 8080 | `${GATEWAY_PORT}:8080` |
+| company | 8081 | `127.0.0.1:8081` |
+| content | 8082 | `127.0.0.1:8082` |
+| insight | 8083 | `127.0.0.1:8083` |
+| identity | 8086 | `127.0.0.1:8086` |
+| agent | 8090 | не публикуется |
+| PostgreSQL | 5432 | внутри сети Compose |
+| Redis | 6379 | внутри сети Compose |
+| MinIO (профиль `minio`) | 9000 / 9001 | опционально |
 
-- Visibility is membership-based for every role: a user sees only the companies in `company_access`. The `admin` role does not bypass the company list.
-- Each membership has a role, `owner` or `member`. The creator of a company becomes its owner and can add, remove or change the role of other users by email and edit the company fields. Members can view the company and its roster but cannot manage or edit it. The last owner cannot be removed or demoted.
-- System admins keep global rights for documents, for `/api/v1/access/grant|revoke` and for company management by id; these grants accept an optional `role` so an owner can be assigned. An admin can read a company detail to edit or manage it, but the company list stays membership-filtered.
-- The company list is filtered by forwarding the membership ids to the company service; a detail request for a company outside that set returns `404` to a regular user.
-- `/api/v1/feed` and `/api/v1/insights/*` also require a session. The feed checks `company_id`; job creation checks the body and job reads check the stored `company_id`, so a forbidden company returns `404`.
-- `/api/v1/documents*` requires an admin session. `/api/v1/news` and `/api/v1/search` are public.
-- Company, content, insight and identity ports are published on `127.0.0.1` for local debugging. Only the gateway is reachable externally, so public traffic must go through it.
+## Как устроены данные
 
-## Contributing
+Хранилища:
 
-Commit message conventions are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+- `postgres` — один инстанс PostgreSQL (`pgvector/pgvector:pg16`) с четырьмя базами и отдельными ролями; схемы создаются миграциями сервисов.
+- `pgdata` — volume PostgreSQL, `contentdata` — volume с исходными PDF.
+- Redis поднят в Compose, но сервисы его пока не используют: он зарезервирован под очереди.
+- MinIO — опциональный профиль (`make infra-minio`), по умолчанию content хранит файлы на volume.
 
-## Module path
+Content-пайплайн:
 
-The Go module currently uses `github.com/alfa-hack/alfa-hack`. Change `module` in `go.mod` and imports if your organization uses a different path.
+1. Приём новости (`POST /api/v1/documents`) или PDF (`POST /api/v1/documents/pdf`, multipart).
+2. Нормализация текста, дедупликация по каноническому URL и по хешу содержимого.
+3. Нарезка на чанки: 1200 символов с перекрытием 200.
+4. Полнотекстовый индекс `tsvector` с русской конфигурацией + триграммы/релевантность в запросе.
+5. `GET /api/v1/news` — формат AI-команды: `document_id`, `news_id`, `title`, `published_at`, `source_name`, `source_url`, `full_text`, `tags`, `target_sectors`. Фильтры: `kind`, `sector`, `tag`, `source`, `from`, `to`, `limit`, `offset`; всего записей — в `X-Total-Count`.
+6. `GET /api/v1/search?q=` — публичный поиск по новостям и PDF.
+
+RAG-чанки живут в той же `content_db`: таблица `rag_chunks` с `embedding vector(384)` и HNSW-индексом (`vector_cosine_ops`). Агент пишет и читает их только через API content-сервиса и никогда не открывает `content_db` сам.
+
+Идентичность и доступ:
+
+- пароли — bcrypt, в БД хранятся только SHA-256 хеши токенов сессий;
+- сессия — cookie `alfa_session` или `Authorization: Bearer`;
+- регистрация, вход, выход, профиль, смена пароля, участники компаний — через identity; контракт в `contracts/openapi/identity.yaml`.
+
+Профиль компании (`company_db`): реквизиты, отрасль, регион, выручка, ОКВЭД, банковские продукты, люди и связи — группы компаний, общие люди, контрагенты по платежам. Детали и формат CSV — в [services/company/README.md](services/company/README.md).
+
+## Лента и ранжирование
+
+Insight не читает `content_db`. Он запрашивает последние 200 новостей через публичный API content-сервиса, кэширует список на 30 секунд (если content недоступен — отдаёт последний кэш) и ранжирует в памяти под профиль компании.
+
+Оценка события (`services/insight/internal/insight/rank.go`):
+
+| Признак | Вес |
+| --- | --- |
+| Компания в заголовке | 6.0 |
+| Компания в тексте | 2.5 |
+| Тег компании | 2.0 |
+| Отрасль компании совпала с `target_sectors` | 4.0 |
+| Отраслевой тег | 2.0 |
+| Отраслевой контекст в тексте | 1.5 |
+| Регион | 1.5 |
+| Свежесть (24 ч / 7 дней) | 2.0 / 1.0 / 0.25 |
+
+Итог нормируется делением на 14 и округляется до сотых — это и есть `relevance`. Новости без совпадений не выбрасываются: они уходят в конец ленты с `relevance = 0.1` и причиной «Общая повестка», чтобы пагинация и фильтры покрывали всё окно.
+
+Фильтры применяются после ранжирования: `source`, `tag`, `sector` (повторяемые или через запятую), `q` (заголовок, текст, источник, теги, отрасли), `from`/`to` (`2006-01-02` или RFC3339), `sort` (`relevance` или `date`). Фасеты считаются по несфильтрованному окну и возвращаются в каждом ответе, поэтому набор вариантов не исчезает после выбора. `total` — количество после фильтров.
+
+## Разбор события: поток SSE
+
+```text
+POST /api/v1/insights/jobs            → 202 {job_id, events_url}
+GET  /api/v1/insights/jobs/{id}/events → SSE: status → step* → result | error
+```
+
+Шаги агента: `planning` → `enriching` (RAG) → `retrieving` → `ranking` → `analyzing` → `validating`. Каждый шаг приходит со статусом `running`/`done`, номером `seq` и сообщением. События `result` и `error` терминальны, после них стрим закрывается. Переподключение — по `Last-Event-ID`, сервер досылает пропущенные события.
+
+Структура результата (`Insight`):
+
+- `summary`, `why_it_matters`;
+- `facts[]`, `hypotheses[]` — тезисы с `source_ids` и уверенностью;
+- `structured_risks[]`, `structured_opportunities[]` — со ссылками на источники;
+- `bank_view` — `used`, `text`, `source_ids` (только аналитика Альфа-Банка);
+- `ai_view` — вывод модели с источниками;
+- `actions[]`, `sources[]`, `confidence`, `meta`, `disclaimer`.
+
+Публичный SSE идёт через gateway → insight. Внутренний SSE агента наружу не публикуется. Схемы: `contracts/events/insight-progress.json`, `contracts/events/agent-events.json`.
+
+## Агент и работа с моделями
+
+Агент — stateless-сервис: получает контекст компании и evidence, возвращает структурированный инсайт. Задачи, повторы и публичный стрим живут в insight. Практическая оговорка: кэш инсайтов (в памяти), файловый дневной бюджет и JSONL-метрики находятся в процессе агента и считаются per-instance.
+
+Режимы (`AGENT_MODE`):
+
+- `stub` — детерминированный ответ без сети. Так работает демо: виден весь путь SSE, но без вызовов LLM.
+- `live` — вызов OpenAI-совместимого API организаторов. Локальный LLM и GPU не нужны.
+
+Генеративные модели: только из утверждённого списка ТЗ, через API организаторов (`LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`). Актуальный перечень и провайдеры зафиксированы в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Fine-tuning не применяется. Второй адрес (`LLM_FALLBACK_BASE_URL`) опционален и используется только если основной недоступен.
+
+Как устроен live-ответ:
+
+1. `enrich_evidence` догружает контекст, если evidence меньше трёх: семантический поиск по компании → глобальный поиск → список чанков → новости по отрасли.
+2. Запрос к LLM с системным промптом (правила цитирования, разделение фактов и гипотез, запрет внешних фактов).
+3. Pydantic-валидация структуры и детерминированные проверки: неизвестный `source_id`, отсутствие цитат при непустом evidence, `bank_view` без источника или с не-Альфа источником, «протечка» legacy `bank_position`, пустой список тезисов, отсутствие дисклеймера.
+4. При замечаниях — repair-loop: второй запрос с перечнем ошибок. Если и он не прошёл, возвращается безопасный каркас с `meta.degraded=true`, а список замечаний — в `meta.validation_issues`.
+5. Успешный результат кладётся в кэш на час; ключ — компания + событие + набор `source_id` + локаль.
+
+Метрики и бюджет:
+
+- каждый вызов пишет JSONL в `METRICS_DIR` (латентность, токены, throughput, статус) и строку в лог; `make metrics` агрегирует по `source,model`;
+- дневной бюджет LLM — 450 ₽ (оценка по токенам и курсу, константы в `services/agent/app/llm/budget.py`), состояние в `ALFA_AGENT_STATE_DIR`;
+- `make eval` прогоняет 12 фикстур через live-модель, `make eval-stub` — через стаб; пороги: покрытие цитатами ≥ 0.9, корректность `bank_view` ≥ 0.9, использование позиции банка при наличии аналитики ≥ 0.7, дисклеймер = 1.0, доля деградаций ≤ 0.1.
+
+Локальная модель нужна **только для эмбеддингов RAG** — см. следующий раздел. Для генерации текста локальных моделей нет.
+
+## RAG по документам
+
+RAG нужен, когда в evidence не хватает контекста: агент подтягивает чанки финансовой аналитики и новостей, чтобы отвечать по документам, а не по общим знаниям модели.
+
+- Модель эмбеддингов: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, ~470 МБ, работает на CPU (`device="cpu"`), GPU не требуется.
+- Где используется: `AGENT_MODE=live` при обогащении evidence и автономная RAG-утилита (`make rag-*`). В `stub`-демо не вызывается вообще.
+- Где хранится: `content_db.rag_chunks` (pgvector, HNSW), доступ только через API content-сервиса.
+- Пайплайн: PDF → текст (`pdftotext` из poppler в образе content; OCR опционален) → чанки 1000/200 → эмбеддинги → upsert → поиск top-k с фильтрами `company_id`, `sector`, `published_at`.
+
+Воспроизводимый запуск без GPU и без сюрпризов с сетью:
+
+```bash
+# 1. Зависимости эмбеддингов (CPU-сборка torch)
+cd services/agent && uv sync --extra hf
+
+# 2. Один раз скачать веса в кэш Hugging Face
+uv run python - <<'PY'
+from sentence_transformers import SentenceTransformer
+SentenceTransformer("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+PY
+
+# 3. Дальше можно работать полностью офлайн
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+```
+
+Кэш по умолчанию — `~/.cache/huggingface`. Чтобы переиспользовать его в контейнере, смонтируйте каталог в агент и задайте `HF_HOME`; без этого первый live-запрос с RAG полезет в сеть за весами.
+
+Команды утилиты:
+
+```bash
+make rag-install   # зависимости RAG (extra hf)
+make rag-build     # индекс из PDF в services/agent/data/
+make rag-update    # инкрементальное обновление
+make rag-query Q="вопрос"                # ответ LLM (автономный CLI)
+make rag-search Q="выручка" COMPANY_ID=magnit AFTER=2026-01-01
+make rag-watch     # следить за services/agent/data/ и обновлять индекс
+make rag-list COMPANY_ID=magnit
+make rag-stats
+make rag-clean     # сбросить кэш обработанных файлов (векторы остаются в content)
+```
+
+Переменные `OLLAMA_*` в `.env` относятся только к автономной генерации внутри `rag-query`/`rag-ask` и для продукта не нужны — агент в `live`-режиме использует OpenAI-совместимый API.
+
+## Безопасность и модель доступа
+
+- Gateway проверяет сессию в identity и не доверяет клиенту.
+- Видимость компаний — по членству, для всех ролей. `admin` не обходит список компаний.
+- Роли членства: `owner` (создатель) управляет компанией и участниками, `member` — только чтение. Последнего владельца нельзя удалить или понизить.
+- Системный администратор дополнительно управляет документами (`/api/v1/documents*`), грантами `/api/v1/access/grant|revoke` и компанией по id.
+- Чтение чужой компании по id возвращает `404`, а не `403` — чтобы не раскрывать существование объекта.
+- `/api/v1/feed` и `/api/v1/insights/*` требуют сессию и проверяют `company_id`; `/api/v1/news` и `/api/v1/search` публичны.
+- Логин ограничен по частоте (`IDENTITY_LOGIN_MAX_ATTEMPTS` за `IDENTITY_LOGIN_WINDOW`), пароль — от 8 символов и до 72 байт, сессии убираются фоновой задачей.
+- Gateway → identity для внутреннего вызова членства использует `X-Internal-Token` (`IDENTITY_INTERNAL_TOKEN`); вне демо задайте свой секрет.
+- Cookie сессии: `SameSite=Lax`, `HttpOnly`; для HTTPS включите `SESSION_COOKIE_SECURE=true`.
+
+## Наблюдаемость и эксплуатация
+
+- Health: `GET /healthz` у каждого сервиса (gateway отдаёт `{"status":"ok","service":"gateway"}`, остальные — свой формат). Docker health-чеки опрашивают их каждые 3 секунды.
+- Логи: `make logs` (`docker compose logs -f`). Сервисы пишут структурные логи, gateway добавляет `X-Request-ID`.
+- Метрики LLM: JSONL в `services/agent/metrics/llm_metrics.jsonl` (или `METRICS_DIR`), агрегация — `make metrics`.
+- Данные: `pgdata` (базы), `contentdata` (PDF), `services/agent/metrics`, `ALFA_AGENT_STATE_DIR`.
+- Обновление после изменения кода: `make demo` (пересоберёт образы) или точечно `docker compose build web insight agent && docker compose up -d web insight agent`.
+- Полный сброс: `make demo-reset` (удаляет volume и базы), затем `make demo`.
+
+## Тесты, линт и CI
+
+```bash
+make lint   # gofmt, go vet, golangci-lint, ESLint, tsc, ruff format/check
+make test   # go test -race, Vitest, Pytest
+make smoke  # end-to-end на поднятом стеке
+```
+
+Что покрыто:
+
+- Go: доступ и сессии, компании и связи, дедупликация и чанкинг контента, ранжирование и фильтры ленты, фасеты, прокси и SSE-relay, клиенты agent/content.
+- Web: Vitest на форматирование, хеш-роутинг, фильтры и API-клиент (38 тестов), плюс ESLint и `tsc`.
+- Agent: 74 теста — валидаторы, repair-loop, кэш, бюджет, обогащение, метрики, промпты, контракты.
+- Smoke: поднимает полный стек через `scripts/demo.sh` и проверяет регистрацию, доступ к компаниям, ленту, создание задачи и SSE-события.
+
+CI (`.github/workflows/ci.yml`) — четыре джобы: `go` (gofmt, vet, golangci-lint, `go test -race` с покрытием), `web` (install, lint, typecheck, test, build), `agent` (ruff, pytest), `smoke` (полный стек + smoke-сценарий).
+
+## Команды
+
+| Команда | Назначение |
+| --- | --- |
+| `make bootstrap` | Зависимости и `.env` для локальной разработки |
+| `make infra` / `make infra-minio` | PostgreSQL + Redis (опционально MinIO) |
+| `make migrate` / `make seed` | Миграции и демо-данные |
+| `make dev` | Сервисы на хосте + инфраструктура в Docker |
+| `make demo` | Полный стек в Docker + демо-данные + аккаунты |
+| `make demo-reset` / `make demo-users` | Пересоздать стек / только аккаунты |
+| `make up` / `make down` | Поднять/остановить стек без сидинга |
+| `make logs` | Логи Compose |
+| `make lint` / `make test` / `make smoke` | Проверки |
+| `make gen` | Перегенерировать типы из `contracts/` |
+| `make metrics` | Сводка метрик LLM |
+| `make eval` / `make eval-stub` | Eval-набор (live / stub) |
+| `make rag-*` | RAG-утилита (см. раздел RAG) |
+| `make clean` | Удалить локальные артефакты сборки |
+
+## Структура репозитория
+
+```text
+contracts/            OpenAPI и JSON-схемы SSE-событий
+docs/                 API-справочник, ADR, скриншоты
+services/gateway/     публичный BFF: сессии, проверка доступа, прокси, SSE-relay
+services/identity/    пользователи, сессии, членство в компаниях
+services/company/     компании, люди, связи
+services/content/     новости, PDF, чанки, RAG-чанки
+services/insight/     лента, задачи, публичный SSE, оркестрация агента
+services/agent/       Python/FastAPI-агент и RAG-система
+web/                  React 19 + TypeScript + Tailwind
+infra/                роли и базы PostgreSQL, MinIO
+seed/                 демо-данные
+scripts/              dev, demo, migrate, seed, bootstrap-users, smoke, gen, screenshots
+docs/adr/             архитектурные решения (монорепо, одна БД на сервис, SSE агента)
+```
+
+## Ограничения и планы
+
+- Задачи insight и их события хранятся в памяти процесса: перезапуск сервиса теряет незавершённые разборы. Таблицы `analysis_jobs`/`analysis_events` зарезервированы под durable-хранилище.
+- Ingestion-worker — заглушка: документы приходят через API и seed.
+- Фильтры ленты работают по окну последних 200 новостей. Следующий шаг — перенести фильтры в запрос content-сервиса.
+- Дневной бюджет и кэш инсайтов считаются на инстанс агента; при горизонтальном масштабировании это мягкий лимит.
+- Redis зарезервирован под очереди и пока не используется.
+- Миграции — SQL-файлы, без ORM и автоматического rollback.
+
+## Troubleshooting
+
+**«Нет доступных компаний» после входа.** Пользователь не добавлен ни в одну компанию. Выполните `make demo-users` или добавьте его владельцем компании. Регистрация должна быть включена (`IDENTITY_REGISTRATION_ENABLED=true`).
+
+**Порт занят.** Поменяйте `GATEWAY_PORT`/`WEB_PORT` в `.env` и перезапустите `make demo`; `make smoke` подхватит те же значения.
+
+**Лента пуста.** В content-сервисе нет новостей: выполните `make seed` или загрузите документы через `POST /api/v1/documents`.
+
+**Разбор зависает.** Проверьте `docker compose logs agent insight`. В `AGENT_MODE=live` убедитесь, что заданы `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL` и есть сеть; при превышении дневного бюджета задача завершится с ошибкой.
+
+**`make smoke` падает на доступе к компаниям.** Стек поднят без демо-данных: `make demo` создаёт аккаунты и выдаёт доступ, `make up` — нет.
+
+**Не хватает диска при сборке.** `~2 ГБ` занимает образ агента (torch для эмбеддингов). Освободите место или соберите без `--extra hf`, если RAG не нужен.
+
+**Live-режим не находит модель эмбеддингов.** Скачайте веса заранее (раздел [RAG](#rag-по-документам)) или разрешите агенту доступ в интернет.
+
+## Ссылки
+
+- [docs/API.md](docs/API.md) — справочник API с примерами запросов и ответов.
+- [contracts/README.md](contracts/README.md) — контракты и правила SSE.
+- [docs/adr/](docs/adr/) — архитектурные решения.
+- [services/agent/README.md](services/agent/README.md) — агент, режимы, eval и метрики.
+- [services/company/README.md](services/company/README.md), [services/content/README.md](services/content/README.md), [services/identity/README.md](services/identity/README.md) — детали сервисов.
+- [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) — модели, библиотеки и данные.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — правила коммитов и проверок.
