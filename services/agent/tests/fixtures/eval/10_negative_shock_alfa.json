@@ -1,0 +1,12 @@
+{
+  "id": "negative-shock-alfa",
+  "payload": {
+    "request_id": "eval-10", "company": {"id": "severstal", "name": "Северсталь", "industry": "Металлургия", "region": "Череповец"},
+    "event": {"id": "e10", "title": "ЕС ввёл пошлины на российскую сталь"},
+    "evidence": [
+      {"source_id": "n10", "title": "Пошлины", "url": "https://n/10", "snippet": "ЕС ввёл пошлины 15% на сталь из РФ."},
+      {"source_id": "rag:ALFA_Russian_Steels_1К21PreviewUpdate_15Apr2021.pdf:3:0", "title": "Steels", "url": "rag://s", "snippet": "Экспорт в ЕС — значимый канал для российских металлургов."}
+    ],
+    "locale": "ru", "mode": "live"
+  }
+}

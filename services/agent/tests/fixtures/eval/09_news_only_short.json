@@ -1,0 +1,11 @@
+{
+  "id": "news-only-short",
+  "payload": {
+    "request_id": "eval-09", "company": {"id": "magnit", "name": "Магнит", "industry": "Ритейл", "region": "Москва"},
+    "event": {"id": "e09", "title": "Магнит объявил о дивидендах"},
+    "evidence": [
+      {"source_id": "n9", "title": "Дивиденды", "url": "https://n/9", "snippet": "Совет директоров рекомендовал дивиденды."}
+    ],
+    "locale": "ru", "mode": "live"
+  }
+}

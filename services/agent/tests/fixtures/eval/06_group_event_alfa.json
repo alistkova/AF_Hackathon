@@ -1,0 +1,12 @@
+{
+  "id": "group-event-alfa",
+  "payload": {
+    "request_id": "eval-06", "company": {"id": "magnit", "name": "Магнит", "industry": "Ритейл", "region": "Москва"},
+    "event": {"id": "e06", "title": "Магнит-логистика (группа) привлекла синдицированный кредит"},
+    "evidence": [
+      {"source_id": "n6", "title": "Кредит", "url": "https://n/6", "snippet": "Синдикат банков предоставил группе кредит на 15 млрд руб."},
+      {"source_id": "rag:FI_Strategy_3Q26_22072026.pdf:21:1", "title": "FI Strategy", "url": "rag://f", "snippet": "52% рыночных выпусков — флоутеры."}
+    ],
+    "locale": "ru", "mode": "live"
+  }
+}

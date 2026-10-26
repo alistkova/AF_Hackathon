@@ -65,3 +65,4 @@ venv/
 .idea/
 .vscode/
 *.log
+services/agent/reports/

@@ -1,0 +1,12 @@
+{
+  "id": "counterparty-payments-alfa",
+  "payload": {
+    "request_id": "eval-05", "company": {"id": "magnit", "name": "Магнит", "industry": "Ритейл", "region": "Краснодар"},
+    "event": {"id": "e05", "title": "Ключевой контрагент Магнита снизил цены на логистику на 12%"},
+    "evidence": [
+      {"source_id": "n5", "title": "Логистика", "url": "https://n/5", "snippet": "Тарифы на перевозку снизились на 12%."},
+      {"source_id": "rag:ALFA-consumption.pdf:3:0", "title": "Consumption", "url": "rag://c", "snippet": "Снижение логистических издержек позитивно для ритейла."}
+    ],
+    "locale": "ru", "mode": "live"
+  }
+}
