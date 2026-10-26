@@ -10,10 +10,10 @@ import type {
   StepEvent,
 } from "../../api/types";
 import { formatDate } from "../../shared/format";
-import { useDebouncedValue } from "../../shared/useDebouncedValue";
 import { AnalysisPanel } from "./AnalysisPanel";
 import {
   hasActiveFeedFilters,
+  hasInvalidFeedDateRange,
   isFilterSelected,
   toApiFeedFilters,
   type FeedFilterState,
@@ -24,8 +24,6 @@ const feedPageSize = 30;
 type Props = {
   companyId: string;
   filters: FeedFilterState;
-  resetKey: number;
-  onQueryChange: (query: string) => void;
   onFacetsChange: (facets: FeedFacets | null) => void;
   onResetFilters: () => void;
   onToggleSource: (source: string) => void;
@@ -36,8 +34,6 @@ type Props = {
 export function Feed({
   companyId,
   filters,
-  resetKey,
-  onQueryChange,
   onFacetsChange,
   onResetFilters,
   onToggleSource,
@@ -50,35 +46,9 @@ export function Feed({
   const [insight, setInsight] = useState<Insight | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState(filters.query);
-  const lastCommittedQuery = useRef(filters.query);
-  const debouncedSearch = useDebouncedValue(search, 300);
   const apiFilters = toApiFeedFilters(filters);
   const hasFilters = hasActiveFeedFilters(filters);
-
-  useEffect(() => {
-    if (debouncedSearch === lastCommittedQuery.current) {
-      return;
-    }
-    lastCommittedQuery.current = debouncedSearch;
-    onQueryChange(debouncedSearch);
-  }, [debouncedSearch, onQueryChange]);
-
-  useEffect(() => {
-    if (filters.query === lastCommittedQuery.current) {
-      return;
-    }
-    lastCommittedQuery.current = filters.query;
-    setSearch(filters.query);
-  }, [filters.query]);
-
-  useEffect(() => {
-    if (resetKey === 0) {
-      return;
-    }
-    lastCommittedQuery.current = "";
-    setSearch("");
-  }, [resetKey]);
+  const dateRangeInvalid = hasInvalidFeedDateRange(filters);
 
   const feed = useInfiniteQuery({
     queryKey: ["feed", companyId, apiFilters],
@@ -88,7 +58,7 @@ export function Feed({
       const loaded = allPages.reduce((total, page) => total + page.items.length, 0);
       return loaded < lastPage.total ? loaded : undefined;
     },
-    enabled: Boolean(companyId),
+    enabled: Boolean(companyId) && !dateRangeInvalid,
     staleTime: 30_000,
     placeholderData: keepPreviousData,
   });
@@ -178,15 +148,6 @@ export function Feed({
           </p>
         </div>
         <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Поиск по ленте"
-            aria-label="Поиск по ленте"
-            maxLength={200}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#ef3124] sm:w-56"
-          />
           <button
             type="button"
             onClick={() => feed.refetch()}
@@ -201,14 +162,20 @@ export function Feed({
         </div>
       </div>
 
-      {feed.isLoading && (
+      {dateRangeInvalid && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+          Начало периода не может быть позже окончания.
+        </div>
+      )}
+
+      {!dateRangeInvalid && feed.isLoading && (
         <div className="space-y-3">
           <div className="h-32 animate-pulse rounded-2xl bg-white/70" />
           <div className="h-32 animate-pulse rounded-2xl bg-white/70" />
         </div>
       )}
 
-      {feed.isError && (
+      {!dateRangeInvalid && feed.isError && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
           {feed.error instanceof Error
             ? feed.error.message
@@ -216,7 +183,7 @@ export function Feed({
         </div>
       )}
 
-      {!feed.isLoading && items.length === 0 && (
+      {!dateRangeInvalid && !feed.isLoading && items.length === 0 && (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
           {hasFilters ? (
             <>
@@ -359,7 +326,7 @@ export function Feed({
         );
       })}
 
-      {feed.hasNextPage && (
+      {!dateRangeInvalid && feed.hasNextPage && (
         <div className="flex justify-center pt-2">
           <button
             type="button"
