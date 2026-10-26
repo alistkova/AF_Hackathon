@@ -1,6 +1,6 @@
 """Детерминированные проверки инсайта перед отправкой клиенту."""
 from __future__ import annotations
-
+from app.llm.prompts import is_alfa_source
 from dataclasses import dataclass
 
 from app.contracts.models import AnalysisRequest, Insight
@@ -38,7 +38,6 @@ def validate_insight(insight: Insight, payload: AnalysisRequest) -> list[Validat
     check_ids(insight.ai_view.source_ids, "ai_view")
     check_ids([s.source_id for s in insight.sources], "sources")
 
-    # Хотя бы один вывод должен быть привязан к источнику, если evidence есть.
     claims = (
         insight.facts
         + insight.hypotheses
@@ -56,6 +55,7 @@ def validate_insight(insight: Insight, payload: AnalysisRequest) -> list[Validat
     if not insight.disclaimer.strip():
         issues.append(ValidationIssue("missing_disclaimer", "disclaimer обязателен"))
 
+    # 1. used=true, но source_ids пуст — это ошибка
     if insight.bank_view.used and not insight.bank_view.source_ids:
         issues.append(
             ValidationIssue(
@@ -64,6 +64,20 @@ def validate_insight(insight: Insight, payload: AnalysisRequest) -> list[Validat
             )
         )
 
+    # 2. used=true и source_ids непуст, но ни один не Alfa — ошибка
+    if insight.bank_view.used and insight.bank_view.source_ids:
+        if not any(is_alfa_source(sid) for sid in insight.bank_view.source_ids):
+            issues.append(
+                ValidationIssue(
+                    code="bank_view_no_alfa_source",
+                    message=(
+                        "bank_view.used=true, но ни один source_id не относится "
+                        "к аналитике Альфа-Банка"
+                    ),
+                )
+            )
+
+    # 3. used=false, но legacy bank_position заполнен — leak
     if not insight.bank_view.used and insight.bank_position.strip():
         issues.append(
             ValidationIssue(
