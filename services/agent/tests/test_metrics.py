@@ -1,3 +1,5 @@
+import json
+
 from app.contracts.models import (
     AIView,
     AnalysisRequest,
@@ -112,3 +114,59 @@ def test_aggregate_and_thresholds():
     agg = aggregate(rows)
     assert agg["total"] == 2
     assert check_thresholds(agg) == []
+
+
+def test_recorder_writes_jsonl_line(tmp_path):
+    from app.metrics.recorder import MetricsRecorder, _FILENAME
+
+    sink = MetricsRecorder(directory=tmp_path, enabled=True)
+    sink.record(
+        source="agent.analyze", model="m", e2el_s=2.0,
+        input_tokens=100, output_tokens=50, total_tokens=150,
+        output_tput=25.0, total_tput=75.0, ok=True, error=None,
+    )
+    target = tmp_path / _FILENAME
+    lines = target.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["source"] == "agent.analyze"
+    assert entry["output_tput"] == 25.0
+    assert entry["total_tput"] == 75.0
+    assert entry["ok"] is True
+    assert "ts" in entry
+
+
+def test_recorder_disabled_writes_nothing(tmp_path):
+    from app.metrics.recorder import MetricsRecorder, _FILENAME
+
+    sink = MetricsRecorder(directory=tmp_path, enabled=False)
+    sink.record(source="rag.query", model="m", e2el_s=1.0)
+    assert not (tmp_path / _FILENAME).exists()
+
+
+def test_recorder_does_not_fail_on_bad_dir(tmp_path):
+    from app.metrics.recorder import MetricsRecorder, _FILENAME
+
+    bad = tmp_path / "no" / "such" / "nest"
+    sink = MetricsRecorder(directory=bad, enabled=True)
+    sink.record(source="agent.analyze", model="m", e2el_s=1.0)
+    assert (bad / _FILENAME).exists()
+
+
+def test_aggregate_summarizes(tmp_path):
+    from app.metrics.aggregate import summarize
+    from app.metrics.recorder import MetricsRecorder, _FILENAME
+
+    sink = MetricsRecorder(directory=tmp_path, enabled=True)
+    for i in range(1, 4):
+        sink.record(
+            source="rag.query", model="m", e2el_s=float(i),
+            input_tokens=10, output_tokens=5, total_tokens=15,
+            output_tput=1.0, total_tput=3.0, ok=True,
+        )
+    result = summarize(tmp_path / _FILENAME, group="source")
+    assert result["total_entries"] == 3
+    rows = [g for g in result["groups"] if g["group"] == ("rag.query",)]
+    assert rows[0]["count"] == 3
+    assert rows[0]["e2el_median_s"] == 2.0
+    assert rows[0]["output_tokens_total"] == 15.0
