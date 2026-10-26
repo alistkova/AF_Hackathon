@@ -17,6 +17,10 @@ Modes:
 
 The contract is `contracts/openapi/agent.yaml`; SSE payloads are described in `contracts/events/agent-events.json`.
 
+## Local models
+
+Generation always goes through an OpenAI-compatible API (`LLM_BASE_URL`); there is no local generative model and no GPU requirement. The only local model is the RAG embedding encoder `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`, which runs on CPU and is only touched in `AGENT_MODE=live` or by the standalone RAG CLI. How to pre-download it and run offline (`HF_HOME`, `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`) is described in the root [README](../../README.md#rag-по-документам).
+
 ## Quality tooling
 
 - `make eval` runs the live LLM over `tests/fixtures/eval` and writes a report to `reports/`.

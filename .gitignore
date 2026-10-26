@@ -67,3 +67,4 @@ venv/
 *.log
 services/agent/reports/
 services/agent/metrics/
+.cache/
