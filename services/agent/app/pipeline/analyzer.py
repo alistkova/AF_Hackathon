@@ -90,12 +90,20 @@ class LLMAnalyzer:
         self.model = model
 
     async def analyze(self, payload: AnalysisRequest) -> AsyncIterator[AgentEvent]:
+        from app.pipeline.enrichment import enrich_evidence
+
         yield step("planning", "running", "Планируем анализ")
         yield step("planning", "done", "План готов")
 
-        yield step("retrieving", "running", "Проверяем evidence")
-        await asyncio.sleep(0.05)
-        yield step("retrieving", "done", f"Evidence: {len(payload.evidence)} источников")
+        yield step("enriching", "running", "Подтягиваем RAG-контекст")
+        before = len(payload.evidence)
+        try:
+            payload = await enrich_evidence(payload)
+            added = len(payload.evidence) - before
+            yield step("enriching", "done", f"Evidence: {len(payload.evidence)} (+{added})")
+        except Exception as exc:
+            print(f"[analyzer] enrichment failed: {exc!r}")
+            yield step("enriching", "done", f"Evidence: {len(payload.evidence)} (без RAG)")
 
         yield step("analyzing", "running", "Модель формирует инсайт")
         insight, issues = await self._generate(payload)

@@ -83,25 +83,42 @@ SECTOR_PATTERNS = {
 
 
 def extract_pdf_text(pdf_path: Path) -> list[Document]:
-    """Extract text from a PDF file, returning LangChain Document objects."""
+    """Extract text from a PDF file. Calls OCR when a page has no text layer."""
     docs = []
     try:
         pdf = pdfplumber.open(str(pdf_path))
+        total = len(pdf.pages)
+        ocr_pages = 0
         for i, page in enumerate(pdf.pages):
             text = page.extract_text()
-            if text and text.strip():
-                if _is_mojibake(text):
-                    print(f"  Page {i + 1}: Detected mojibake, attempting OCR...")
+            needs_ocr = not text or not text.strip()
+            if not needs_ocr and _is_mojibake(text):
+                print(f"  {pdf_path.name} p{i + 1}: mojibake -> OCR")
+                needs_ocr = True
+
+            if needs_ocr:
+                if OCR_AVAILABLE:
                     text = _extract_with_ocr(pdf_path, i)
-                if text and text.strip():
-                    text = text.replace("\n", " ").strip()
-                    docs.append(
-                        Document(
-                            page_content=text,
-                            metadata={FILTER_SOURCE: pdf_path.name, FILTER_PAGE: i + 1},
-                        )
+                    ocr_pages += 1
+                    if not text or not text.strip():
+                        print(f"  {pdf_path.name} p{i + 1}: OCR returned empty, skip")
+                        continue
+                else:
+                    print(f"  {pdf_path.name} p{i + 1}: no text, OCR disabled, skip")
+                    continue
+
+            if text and text.strip():
+                text = text.replace("\n", " ").strip()
+                docs.append(
+                    Document(
+                        page_content=text,
+                        metadata={FILTER_SOURCE: pdf_path.name, FILTER_PAGE: i + 1},
                     )
+                )
+            else:
+                print(f"  {pdf_path.name} p{i + 1}: still empty, skip")
         pdf.close()
+        print(f"  {pdf_path.name}: {len(docs)}/{total} pages, OCR used on {ocr_pages}")
     except Exception as e:
         print(f"Warning: Could not extract text from {pdf_path.name}: {e}")
     return docs
@@ -115,21 +132,24 @@ def _is_mojibake(text: str) -> bool:
 
 
 def _extract_with_ocr(pdf_path: Path, page_num: int) -> str:
-    """Extract text from a PDF page using OCR."""
+    """Render PDF page to image and OCR it with tesseract."""
     if not OCR_AVAILABLE:
-        print("  OCR disabled or unavailable, skipping OCR")
         return ""
     try:
+        import pymupdf
+        import pytesseract
+        from PIL import Image
+
         doc = pymupdf.open(str(pdf_path))
         page = doc[page_num]
-        pix = page.get_pixmap(dpi=300)
+        pix = page.get_pixmap(dpi=200)
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         doc.close()
 
         text = pytesseract.image_to_string(img, lang="rus+eng")
         return text
     except Exception as e:
-        print(f"  OCR failed: {e}")
+        print(f"  OCR failed on {pdf_path.name} p{page_num + 1}: {e!r}")
         return ""
 
 
