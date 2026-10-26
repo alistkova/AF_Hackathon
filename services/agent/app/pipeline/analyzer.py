@@ -5,7 +5,10 @@ from typing import Protocol
 
 from app.config import Settings
 from app.contracts.models import (
+    AIView,
     AnalysisRequest,
+    BankView,
+    CitedClaim,
     Insight,
     ResultEvent,
     Source,
@@ -47,10 +50,23 @@ class StubAnalyzer:
             await asyncio.sleep(self.delay)
             yield step(name, "done", message)
 
+        from app.llm.sources import is_alfa_source
+
         sources = [
             Source(source_id=item.source_id, title=item.title, url=item.url)
             for item in payload.evidence
         ]
+        evidence_ids = [item.source_id for item in payload.evidence]
+        alfa_ids = [sid for sid in evidence_ids if is_alfa_source(sid)]
+        bank_used = bool(alfa_ids)
+        bank_text = (
+            "Позиция банка: событие нейтрально-позитивно, но требует проверки "
+            "долговой нагрузки и параметров сделки."
+        )
+        ai_text = (
+            "Вывод AI: сигнал умеренно позитивный, эффект зависит от скорости "
+            "исполнения и стоимости капитала."
+        )
         insight = Insight(
             summary=f"{payload.company.name}: {payload.event.title}",
             why_it_matters=(
@@ -65,20 +81,63 @@ class StubAnalyzer:
                 "Усиление позиций на ключевом рынке.",
                 "Повод для диалога о финансировании и хеджировании.",
             ],
-            bank_position=(
-                "Позиция банка: событие нейтрально-позитивно, но требует проверки "
-                "долговой нагрузки и параметров сделки."
-            ),
-            ai_conclusion=(
-                "Вывод AI: сигнал умеренно позитивный, эффект зависит от скорости "
-                "исполнения и стоимости капитала."
-            ),
+            bank_position=bank_text if bank_used else "",
+            ai_conclusion=ai_text,
             sources=sources,
             actions=[
                 "Проверить финансовые показатели компании.",
                 "Подготовить сценарий влияния на денежный поток.",
             ],
             confidence=0.72,
+            facts=[
+                CitedClaim(
+                    text=(
+                        f"{payload.event.title} — событие в ленте компании {payload.company.name}."
+                    ),
+                    source_ids=evidence_ids,
+                    confidence="high",
+                ),
+                CitedClaim(
+                    text="Событие относится к операционному контуру компании.",
+                    source_ids=evidence_ids,
+                    confidence="medium",
+                ),
+            ],
+            hypotheses=[
+                CitedClaim(
+                    text="Эффект на денежный поток проявится в следующем квартале.",
+                    source_ids=evidence_ids,
+                    confidence="low",
+                ),
+            ],
+            structured_risks=[
+                CitedClaim(
+                    text="Рост затрат может ограничить свободный денежный поток.",
+                    source_ids=evidence_ids,
+                    confidence="medium",
+                ),
+                CitedClaim(
+                    text="Сроки реализации проекта могут увеличиться.",
+                    source_ids=evidence_ids,
+                    confidence="low",
+                ),
+            ],
+            structured_opportunities=[
+                CitedClaim(
+                    text="Усиление позиций на ключевом рынке.",
+                    source_ids=evidence_ids,
+                    confidence="medium",
+                ),
+                CitedClaim(
+                    text="Повод для диалога о финансировании и хеджировании.",
+                    source_ids=evidence_ids,
+                    confidence="low",
+                ),
+            ],
+            bank_view=BankView(
+                used=bank_used, text=bank_text if bank_used else "", source_ids=alfa_ids
+            ),
+            ai_view=AIView(text=ai_text, source_ids=evidence_ids),
             meta={"model": "stub", "prompt_version": "v1"},
         )
         yield result(insight)

@@ -92,6 +92,23 @@ export type Source = {
   url: string;
 };
 
+export type CitedClaim = {
+  text: string;
+  source_ids: string[];
+  confidence?: "low" | "medium" | "high";
+};
+
+export type BankView = {
+  used: boolean;
+  text: string;
+  source_ids: string[];
+};
+
+export type AIView = {
+  text: string;
+  source_ids: string[];
+};
+
 export type Insight = {
   summary: string;
   why_it_matters: string;
@@ -102,6 +119,13 @@ export type Insight = {
   sources: Source[];
   actions: string[];
   confidence: number;
+  facts?: CitedClaim[];
+  hypotheses?: CitedClaim[];
+  structured_risks?: CitedClaim[];
+  structured_opportunities?: CitedClaim[];
+  bank_view?: BankView;
+  ai_view?: AIView;
+  disclaimer?: string;
 };
 
 export type InsightJob = {

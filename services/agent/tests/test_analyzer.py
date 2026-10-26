@@ -35,6 +35,75 @@ async def test_stub_analyzer_returns_cited_insight() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stub_analyzer_satisfies_validators() -> None:
+    from app.contracts.models import AnalysisRequest, ResultEvent
+    from app.pipeline.analyzer import StubAnalyzer
+    from app.pipeline.metrics import evaluate_event
+    from app.pipeline.validators import validate_insight
+
+    payload = AnalysisRequest.model_validate(
+        {
+            "request_id": "test-job",
+            "company": {"id": "magnit", "name": "Магнит"},
+            "event": {"id": "news-001", "title": "Магнит расширяет логистику"},
+            "evidence": [
+                {
+                    "source_id": "news-001",
+                    "title": "Магнит расширяет логистику",
+                    "url": "https://example.com/news-001",
+                },
+                {
+                    "source_id": "rag:ALFA-Macro_Insights.pdf:1:0",
+                    "title": "Alfa Macro",
+                    "url": "rag://macro",
+                },
+            ],
+        }
+    )
+
+    events = [event async for event in StubAnalyzer(delay=0).analyze(payload)]
+    insight = ResultEvent.model_validate_json(events[-1]["data"]).insight
+
+    assert validate_insight(insight, payload) == []
+    assert insight.bank_view.used is True
+    assert insight.bank_view.source_ids == ["rag:ALFA-Macro_Insights.pdf:1:0"]
+
+    metrics = evaluate_event(insight, payload)
+    assert metrics.source_coverage == 1.0
+    assert metrics.separation_ok is True
+    assert metrics.issues == []
+
+
+@pytest.mark.asyncio
+async def test_stub_analyzer_skips_bank_view_without_alfa() -> None:
+    from app.contracts.models import AnalysisRequest, ResultEvent
+    from app.pipeline.analyzer import StubAnalyzer
+    from app.pipeline.validators import validate_insight
+
+    payload = AnalysisRequest.model_validate(
+        {
+            "request_id": "test-job",
+            "company": {"id": "magnit", "name": "Магнит"},
+            "event": {"id": "news-001", "title": "Магнит расширяет логистику"},
+            "evidence": [
+                {
+                    "source_id": "news-001",
+                    "title": "Магнит расширяет логистику",
+                    "url": "https://example.com/news-001",
+                }
+            ],
+        }
+    )
+
+    events = [event async for event in StubAnalyzer(delay=0).analyze(payload)]
+    insight = ResultEvent.model_validate_json(events[-1]["data"]).insight
+
+    assert validate_insight(insight, payload) == []
+    assert insight.bank_view.used is False
+    assert insight.bank_position == ""
+
+
+@pytest.mark.asyncio
 async def test_cache_hit_skips_llm(monkeypatch):
     from app.contracts.models import AnalysisRequest
     from app.pipeline.analyzer import LLMAnalyzer

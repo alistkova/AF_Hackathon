@@ -32,17 +32,41 @@ type Source struct {
 	URL      string `json:"url"`
 }
 
+type CitedClaim struct {
+	Text       string   `json:"text"`
+	SourceIDs  []string `json:"source_ids"`
+	Confidence string   `json:"confidence,omitempty"`
+}
+
+type BankView struct {
+	Used      bool     `json:"used"`
+	Text      string   `json:"text"`
+	SourceIDs []string `json:"source_ids"`
+}
+
+type AIView struct {
+	Text      string   `json:"text"`
+	SourceIDs []string `json:"source_ids"`
+}
+
 type Insight struct {
-	Summary       string         `json:"summary"`
-	WhyItMatters  string         `json:"why_it_matters"`
-	Risks         []string       `json:"risks"`
-	Opportunities []string       `json:"opportunities"`
-	BankPosition  string         `json:"bank_position"`
-	AIConclusion  string         `json:"ai_conclusion"`
-	Sources       []Source       `json:"sources"`
-	Actions       []string       `json:"actions"`
-	Confidence    float64        `json:"confidence"`
-	Meta          map[string]any `json:"meta,omitempty"`
+	Summary                 string         `json:"summary"`
+	WhyItMatters            string         `json:"why_it_matters"`
+	Risks                   []string       `json:"risks"`
+	Opportunities           []string       `json:"opportunities"`
+	BankPosition            string         `json:"bank_position"`
+	AIConclusion            string         `json:"ai_conclusion"`
+	Sources                 []Source       `json:"sources"`
+	Actions                 []string       `json:"actions"`
+	Confidence              float64        `json:"confidence"`
+	Facts                   []CitedClaim   `json:"facts,omitempty"`
+	Hypotheses              []CitedClaim   `json:"hypotheses,omitempty"`
+	StructuredRisks         []CitedClaim   `json:"structured_risks,omitempty"`
+	StructuredOpportunities []CitedClaim   `json:"structured_opportunities,omitempty"`
+	BankView                *BankView      `json:"bank_view,omitempty"`
+	AIView                  *AIView        `json:"ai_view,omitempty"`
+	Disclaimer              string         `json:"disclaimer,omitempty"`
+	Meta                    map[string]any `json:"meta,omitempty"`
 }
 
 type FeedItem struct {

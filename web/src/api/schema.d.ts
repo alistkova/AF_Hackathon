@@ -455,6 +455,21 @@ export interface components {
             /** Format: uri */
             url: string;
         };
+        CitedClaim: {
+            text: string;
+            source_ids?: string[];
+            /** @enum {string} */
+            confidence?: "low" | "medium" | "high";
+        };
+        BankView: {
+            used?: boolean;
+            text?: string;
+            source_ids?: string[];
+        };
+        AIView: {
+            text?: string;
+            source_ids?: string[];
+        };
         Insight: {
             summary: string;
             why_it_matters: string;
@@ -465,6 +480,13 @@ export interface components {
             sources: components["schemas"]["Source"][];
             actions: string[];
             confidence: number;
+            facts?: components["schemas"]["CitedClaim"][];
+            hypotheses?: components["schemas"]["CitedClaim"][];
+            structured_risks?: components["schemas"]["CitedClaim"][];
+            structured_opportunities?: components["schemas"]["CitedClaim"][];
+            bank_view?: components["schemas"]["BankView"];
+            ai_view?: components["schemas"]["AIView"];
+            disclaimer?: string;
         };
         NewsItem: {
             document_id: string;

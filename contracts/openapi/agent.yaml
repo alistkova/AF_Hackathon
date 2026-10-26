@@ -274,6 +274,39 @@ components:
         url:
           type: string
           format: uri
+    CitedClaim:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+        source_ids:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: string
+          enum: [low, medium, high]
+    BankView:
+      type: object
+      properties:
+        used:
+          type: boolean
+        text:
+          type: string
+        source_ids:
+          type: array
+          items:
+            type: string
+    AIView:
+      type: object
+      properties:
+        text:
+          type: string
+        source_ids:
+          type: array
+          items:
+            type: string
     Insight:
       type: object
       required:
@@ -315,6 +348,28 @@ components:
           type: number
           minimum: 0
           maximum: 1
+        facts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CitedClaim"
+        hypotheses:
+          type: array
+          items:
+            $ref: "#/components/schemas/CitedClaim"
+        structured_risks:
+          type: array
+          items:
+            $ref: "#/components/schemas/CitedClaim"
+        structured_opportunities:
+          type: array
+          items:
+            $ref: "#/components/schemas/CitedClaim"
+        bank_view:
+          $ref: "#/components/schemas/BankView"
+        ai_view:
+          $ref: "#/components/schemas/AIView"
+        disclaimer:
+          type: string
         meta:
           type: object
           additionalProperties: true

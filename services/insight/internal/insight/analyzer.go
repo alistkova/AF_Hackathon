@@ -64,6 +64,10 @@ func (a *StubAnalyzer) Analyze(ctx context.Context, req agentclient.AnalysisRequ
 		}
 	}
 
+	evidenceIDs := make([]string, 0, len(req.Evidence))
+	for _, evidence := range req.Evidence {
+		evidenceIDs = append(evidenceIDs, evidence.SourceID)
+	}
 	sources := make([]Source, 0, len(req.Evidence))
 	for _, evidence := range req.Evidence {
 		sources = append(sources, Source{SourceID: evidence.SourceID, Title: evidence.Title, URL: evidence.URL})
@@ -72,17 +76,36 @@ func (a *StubAnalyzer) Analyze(ctx context.Context, req agentclient.AnalysisRequ
 		sources = append(sources, Source{SourceID: req.Event.ID, Title: req.Event.Title, URL: "https://example.com/news/" + req.Event.ID})
 	}
 
+	aiText := "Вывод AI: сигнал умеренно позитивный, эффект зависит от скорости исполнения и стоимости капитала."
 	item := Insight{
 		Summary:       fmt.Sprintf("%s: %s", req.Company.Name, req.Event.Title),
 		WhyItMatters:  "Событие влияет на операционную эффективность и переговорную позицию компании.",
 		Risks:         []string{"Рост затрат может ограничить свободный денежный поток.", "Сроки реализации проекта могут увеличиться."},
 		Opportunities: []string{"Усиление позиций на ключевом рынке.", "Повод для диалога о финансировании и хеджировании."},
-		BankPosition:  "Позиция банка: событие нейтрально-позитивно, но требует проверки долговой нагрузки и параметров сделки.",
-		AIConclusion:  "Вывод AI: сигнал умеренно позитивный, эффект зависит от скорости исполнения и стоимости капитала.",
+		BankPosition:  "",
+		AIConclusion:  aiText,
 		Sources:       sources,
 		Actions:       []string{"Проверить финансовые показатели компании.", "Подготовить сценарий влияния на денежный поток."},
 		Confidence:    0.72,
-		Meta:          map[string]any{"model": "stub", "prompt_version": "v1"},
+		Facts: []CitedClaim{
+			{Text: fmt.Sprintf("%s — событие в ленте компании %s.", req.Event.Title, req.Company.Name), SourceIDs: evidenceIDs, Confidence: "high"},
+			{Text: "Событие относится к операционному контуру компании.", SourceIDs: evidenceIDs, Confidence: "medium"},
+		},
+		Hypotheses: []CitedClaim{
+			{Text: "Эффект на денежный поток проявится в следующем квартале.", SourceIDs: evidenceIDs, Confidence: "low"},
+		},
+		StructuredRisks: []CitedClaim{
+			{Text: "Рост затрат может ограничить свободный денежный поток.", SourceIDs: evidenceIDs, Confidence: "medium"},
+			{Text: "Сроки реализации проекта могут увеличиться.", SourceIDs: evidenceIDs, Confidence: "low"},
+		},
+		StructuredOpportunities: []CitedClaim{
+			{Text: "Усиление позиций на ключевом рынке.", SourceIDs: evidenceIDs, Confidence: "medium"},
+			{Text: "Повод для диалога о финансировании и хеджировании.", SourceIDs: evidenceIDs, Confidence: "low"},
+		},
+		BankView:   &BankView{Used: false, Text: "", SourceIDs: []string{}},
+		AIView:     &AIView{Text: aiText, SourceIDs: evidenceIDs},
+		Disclaimer: "Не является инвестиционной рекомендацией",
+		Meta:       map[string]any{"model": "stub", "prompt_version": "v1"},
 	}
 	data, _ := json.Marshal(map[string]any{"type": "result", "insight": item})
 	return emit(agentclient.Event{Type: "result", Data: data})
