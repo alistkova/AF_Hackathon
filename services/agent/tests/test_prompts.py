@@ -1,4 +1,5 @@
-from app.llm.prompts import SYSTEM_PROMPT, is_alfa_source
+from app.llm.prompts import SYSTEM_PROMPT
+from app.llm.sources import is_alfa_source
 
 
 def test_alfa_detection():
