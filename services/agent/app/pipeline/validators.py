@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.contracts.models import AnalysisRequest, Insight
-from app.llm.prompts import is_alfa_source
+from app.llm.sources import is_alfa_source
 
 
 @dataclass
@@ -66,15 +66,14 @@ def validate_insight(insight: Insight, payload: AnalysisRequest) -> list[Validat
             )
         )
 
-    # 2. used=true и source_ids непуст, но ни один не Alfa — ошибка
+    # 2. used=true и source_ids непуст, но не все sources — Alfa: ошибка
     if insight.bank_view.used and insight.bank_view.source_ids:
-        if not any(is_alfa_source(sid) for sid in insight.bank_view.source_ids):
+        if not all(is_alfa_source(sid) for sid in insight.bank_view.source_ids):
             issues.append(
                 ValidationIssue(
                     code="bank_view_no_alfa_source",
                     message=(
-                        "bank_view.used=true, но ни один source_id не относится "
-                        "к аналитике Альфа-Банка"
+                        "bank_view.used=true, но не все source_id относятся к аналитике Альфа-Банка"
                     ),
                 )
             )

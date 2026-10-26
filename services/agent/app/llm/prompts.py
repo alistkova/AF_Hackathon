@@ -1,26 +1,5 @@
 """Промпты для LLM. Держим отдельно, чтобы версионировать."""
 
-# Паттерны имён Alfa-аналитики в source_id (rag:ALFA-... , rag:FI_Strategy_... и т.п.)
-ALFA_SOURCE_PATTERNS = (
-    "ALFA-",
-    "ALFA_",
-    "FI_Strategy",
-    "Inflation_tracker",
-    "Gold_digest",
-    "Бонд_Бриф",
-    "Commodities",
-    "macro_stat",
-    "consumption",
-    "Russian_Steels",
-    "Policy_Rate",
-    "Macro_Insights",
-)
-
-
-def is_alfa_source(source_id: str) -> bool:
-    return any(p in source_id for p in ALFA_SOURCE_PATTERNS)
-
-
 SYSTEM_PROMPT = """Ты — AI-аналитик для ЛПР крупного бизнеса в интернет-банке Альфа-Бизнес.
 Твоя задача — не пересказать новость, а объяснить её влияние на конкретную компанию.
 Верни СТРОГО валидный JSON по схеме, без markdown и комментариев.

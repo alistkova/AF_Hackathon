@@ -73,7 +73,7 @@ def test_bank_view_no_alfa_source():
 
 
 def test_bank_view_with_alfa_source_ok():
-    # если в evidence есть ALFA-источник, validator не ругается
+    # если bank_view опирается только на ALFA-источники, validator не ругается
     from app.contracts.models import AnalysisRequest
 
     p = AnalysisRequest.model_validate(
@@ -99,3 +99,32 @@ def test_bank_view_with_alfa_source_ok():
         }
     )
     assert validate_insight(i, p) == []
+
+
+def test_bank_view_with_mixed_sources_fails():
+    # позиция банка не может опираться на новость вместе с аналитикой Альфа
+    from app.contracts.models import AnalysisRequest
+
+    p = AnalysisRequest.model_validate(
+        {
+            "request_id": "t",
+            "company": {"id": "magnit", "name": "Магнит"},
+            "event": {"id": "n1", "title": "Событие"},
+            "evidence": [
+                {"source_id": "n1", "title": "t", "url": "https://x"},
+                {
+                    "source_id": "rag:ALFA-Macro_Insights-Policy_Rate_11Sep.pdf:1:0",
+                    "title": "alfa",
+                    "url": "rag://x",
+                },
+            ],
+        }
+    )
+    i = insight(
+        bank_view={
+            "used": True,
+            "text": "позиция",
+            "source_ids": ["n1", "rag:ALFA-Macro_Insights-Policy_Rate_11Sep.pdf:1:0"],
+        }
+    )
+    assert "bank_view_no_alfa_source" in [issue.code for issue in validate_insight(i, p)]
