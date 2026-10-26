@@ -77,8 +77,12 @@ def load_fixtures(only: str | None = None) -> list[dict]:
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stub", action="store_true", help="использовать StubAnalyzer (без токенов)")
-    parser.add_argument("--id", default=None, help="только одна фикстура (по подстроке в имени файла)")
+    parser.add_argument(
+        "--stub", action="store_true", help="использовать StubAnalyzer (без токенов)"
+    )
+    parser.add_argument(
+        "--id", default=None, help="только одна фикстура (по подстроке в имени файла)"
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -87,7 +91,11 @@ async def main() -> int:
         mode = "stub"
     else:
         if not settings.llm_base_url or not settings.llm_api_key:
-            print("ERROR: LLM_BASE_URL/LLM_API_KEY не заданы. Запусти с --stub или поправь .env", file=sys.stderr)
+            print(
+                "ERROR: LLM_BASE_URL/LLM_API_KEY не заданы. "
+                "Запусти с --stub или поправь .env",
+                file=sys.stderr,
+            )
             return 2
         from app.llm.openai_compat import OpenAICompatClient
         client = OpenAICompatClient(

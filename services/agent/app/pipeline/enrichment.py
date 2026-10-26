@@ -78,13 +78,21 @@ async def _news_fallback(payload: AnalysisRequest) -> list[Evidence]:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(url, params=params)
             r.raise_for_status()
-            items = r.json().get("items", [])
+            data = r.json()
+            if isinstance(data, list):
+                items = data
+            elif isinstance(data, dict):
+                items = data.get("items") or data.get("news") or []
+            else:
+                items = []
     except Exception as exc:
         print(f"[enrichment] news fallback failed: {exc!r}")
         return []
 
     result: list[Evidence] = []
     for item in items[:NEWS_FALLBACK_LIMIT]:
+        if not isinstance(item, dict):
+            continue
         ev = _news_to_evidence(item)
         if ev is not None:
             result.append(ev)

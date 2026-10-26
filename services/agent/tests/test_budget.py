@@ -1,6 +1,3 @@
-import os
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -8,6 +5,7 @@ import pytest
 def test_budget_accumulates(monkeypatch, tmp_path):
     monkeypatch.setenv("ALFA_AGENT_STATE_DIR", str(tmp_path))
     import importlib
+
     from app.llm import budget
     importlib.reload(budget)
 
@@ -23,6 +21,7 @@ def test_budget_accumulates(monkeypatch, tmp_path):
 def test_budget_exceeded(monkeypatch, tmp_path):
     monkeypatch.setenv("ALFA_AGENT_STATE_DIR", str(tmp_path))
     import importlib
+
     from app.llm import budget
     importlib.reload(budget)
     budget.DAILY_BUDGET_RUB = 0.001
