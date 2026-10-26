@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     agent_step_delay: str = "350ms"
 
     llm_base_url: str = ""
+    llm_fallback_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = ""
 

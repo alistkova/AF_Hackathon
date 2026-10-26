@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import Protocol
 
@@ -17,6 +18,8 @@ from app.contracts.models import (
 from app.llm.openai_compat import OpenAICompatClient
 from app.llm.prompts import SYSTEM_PROMPT, build_repair_prompt
 from app.pipeline.validators import ValidationIssue, format_issues, validate_insight
+
+logger = logging.getLogger(__name__)
 
 AgentEvent = dict[str, str]
 
@@ -161,7 +164,7 @@ class LLMAnalyzer:
             added = len(payload.evidence) - before
             yield step("enriching", "done", f"Evidence: {len(payload.evidence)} (+{added})")
         except Exception as exc:
-            print(f"[analyzer] enrichment failed: {exc!r}")
+            logger.warning("[analyzer] enrichment failed: %r", exc)
             yield step("enriching", "done", f"Evidence: {len(payload.evidence)} (без RAG)")
 
         yield step("analyzing", "running", "Модель формирует инсайт")
@@ -182,15 +185,15 @@ class LLMAnalyzer:
 
         cached = cache.get(payload)
         if cached is not None:
-            print("[cache] hit")
+            logger.info("[cache] hit")
             try:
                 insight = self._to_insight(cached, payload)
                 insight.meta["cache"] = "hit"
                 return insight, []
             except Exception as exc:
-                print(f"[cache] corrupt, ignore: {exc!r}")
+                logger.warning("[cache] corrupt, ignore: %r", exc)
 
-        print("[cache] miss")
+        logger.info("[cache] miss")
         last_raw: dict | None = None
         last_issues: list[ValidationIssue] = []
 
@@ -210,7 +213,7 @@ class LLMAnalyzer:
                         "input_tokens": usage.get("prompt_tokens"),
                         "output_tokens": usage.get("completion_tokens"),
                     }
-                print(f"[agent] raw keys={list(raw.keys())}")
+                logger.debug("[agent] raw keys=%s", list(raw.keys()))
                 insight = self._to_insight(raw, payload)
                 issues = validate_insight(insight, payload)
                 if not issues:
@@ -218,13 +221,22 @@ class LLMAnalyzer:
                     insight.meta["cache"] = "miss"
                     return insight, []
                 last_issues = issues
-                print(f"[agent] validation attempt {attempt + 1} failed: {format_issues(issues)}")
+                logger.info(
+                    "[agent] validation attempt %s failed: %s",
+                    attempt + 1,
+                    format_issues(issues),
+                )
             except budget.BudgetExceeded as exc:
-                print(f"[agent] budget exceeded: {exc}")
+                logger.warning("[agent] budget exceeded: %s", exc)
                 last_issues = [ValidationIssue(code="budget_exceeded", message=str(exc))]
                 break
             except Exception as exc:
-                print(f"[agent] LLM attempt {attempt + 1} failed: {type(exc).__name__}: {exc!r}")
+                logger.warning(
+                    "[agent] LLM attempt %s failed: %s: %r",
+                    attempt + 1,
+                    type(exc).__name__,
+                    exc,
+                )
                 last_issues = [
                     ValidationIssue(
                         code="llm_error",

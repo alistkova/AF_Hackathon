@@ -4,12 +4,11 @@ import time
 
 import httpx
 
+from app.config import get_settings
 from app.llm import budget
 from app.metrics.recorder import recorder
 
 logger = logging.getLogger(__name__)
-
-_FALLBACK_BASE_URL = "https://api.alfahack-gateway26.ru/v1"
 
 
 class OpenAICompatClient:
@@ -39,8 +38,9 @@ class OpenAICompatClient:
         headers = {"Authorization": f"Bearer {self.api_key}"}
 
         urls = [self.base_url]
-        if _FALLBACK_BASE_URL not in urls:
-            urls.append(_FALLBACK_BASE_URL)
+        fallback = get_settings().llm_fallback_base_url.strip().rstrip("/")
+        if fallback and fallback not in urls:
+            urls.append(fallback)
 
         last_exc: Exception | None = None
         start = time.perf_counter()
@@ -75,7 +75,7 @@ class OpenAICompatClient:
                 else:
                     logger.info("[llm] via %s (no usage in response)", base)
                 self._record(elapsed, usage, ok=True, error=None)
-                print(f"[llm] raw content preview: {str(content)[:200]!r}")
+                logger.debug("[llm] response preview: %r", str(content)[:200])
                 return self._parse_json(content), usage
             except budget.BudgetExceeded:
                 raise
