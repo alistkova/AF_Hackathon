@@ -3,6 +3,8 @@ import logging
 
 import httpx
 
+from app.llm import budget
+
 logger = logging.getLogger(__name__)
 
 _FALLBACK_BASE_URL = "https://api.alfahack-gateway26.ru/v1"
@@ -14,9 +16,9 @@ class OpenAICompatClient:
         self.api_key = api_key
         self.model = model
 
-    async def complete_json(self, system: str, user: str) -> dict[str, object]:
-        # Без response_format: гейтвеи по-разному его поддерживают,
-        # а на fallback он ломает ответ (возвращает {"type":"json_object"}).
+    async def complete_json(self, system: str, user: str) -> tuple[dict, dict | None]:
+        budget.check()
+
         payload = {
             "model": self.model,
             "temperature": 0.2,
@@ -43,9 +45,28 @@ class OpenAICompatClient:
                     response.raise_for_status()
                     body = response.json()
                 content = body["choices"][0]["message"]["content"]
-                logger.info("[llm] ok via %s model=%s", base, self.model)
+                usage = body.get("usage") or {}
+                if usage:
+                    budget.add_usage(
+                        usage.get("prompt_tokens", 0),
+                        usage.get("completion_tokens", 0),
+                    )
+                    logger.info(
+                        "[llm] via %s in=%s out=%s cost≈%s₽",
+                        base,
+                        usage.get("prompt_tokens"),
+                        usage.get("completion_tokens"),
+                        budget.cost_rub(
+                            usage.get("prompt_tokens", 0),
+                            usage.get("completion_tokens", 0),
+                        ),
+                    )
+                else:
+                    logger.info("[llm] via %s (no usage in response)", base)
                 print(f"[llm] raw content preview: {str(content)[:200]!r}")
-                return self._parse_json(content)
+                return self._parse_json(content), usage
+            except budget.BudgetExceeded:
+                raise
             except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
                 logger.warning("[llm] %s unreachable: %r", base, exc)
                 last_exc = exc
@@ -58,20 +79,18 @@ class OpenAICompatClient:
         raise RuntimeError(f"all LLM endpoints failed: {last_exc!r}") from last_exc
 
     @staticmethod
-    def _parse_json(content: object) -> dict[str, object]:
+    def _parse_json(content: object) -> dict:
         if isinstance(content, dict):
             return content
         if not isinstance(content, str):
             raise ValueError(f"unexpected content type: {type(content)!r}")
 
         text = content.strip()
-        # Снимаем markdown-фенсы ```json ... ```
         if text.startswith("```"):
             text = text.strip("`")
             if text.lower().startswith("json"):
                 text = text[4:]
             text = text.strip()
-        # На всякий случай — найти первую { и последнюю }
         if not text.startswith("{"):
             start = text.find("{")
             end = text.rfind("}")

@@ -120,6 +120,20 @@ class LLMAnalyzer:
     async def _generate(
         self, payload: AnalysisRequest
     ) -> tuple[Insight, list[ValidationIssue]]:
+        from app.llm import budget
+        from app.pipeline import cache
+
+        cached = cache.get(payload)
+        if cached is not None:
+            print("[cache] hit")
+            try:
+                insight = self._to_insight(cached)
+                insight.meta["cache"] = "hit"
+                return insight, []
+            except Exception as exc:
+                print(f"[cache] corrupt, ignore: {exc!r}")
+
+        print("[cache] miss")
         last_raw: dict | None = None
         last_issues: list[ValidationIssue] = []
 
@@ -131,18 +145,32 @@ class LLMAnalyzer:
                     format_issues(last_issues),
                 )
             try:
-                raw = await self.client.complete_json(SYSTEM_PROMPT, user)
+                raw, usage = await self.client.complete_json(SYSTEM_PROMPT, user)
                 last_raw = raw
+                if usage:
+                    raw.setdefault("meta", {})
+                    raw["meta"]["usage"] = {
+                        "input_tokens": usage.get("prompt_tokens"),
+                        "output_tokens": usage.get("completion_tokens"),
+                    }
                 print(f"[agent] raw keys={list(raw.keys())}")
                 insight = self._to_insight(raw)
                 issues = validate_insight(insight, payload)
                 if not issues:
+                    cache.put(payload, raw)
+                    insight.meta["cache"] = "miss"
                     return insight, []
                 last_issues = issues
                 print(
                     f"[agent] validation attempt {attempt + 1} failed: "
                     f"{format_issues(issues)}"
                 )
+            except budget.BudgetExceeded as exc:
+                print(f"[agent] budget exceeded: {exc}")
+                last_issues = [
+                    ValidationIssue(code="budget_exceeded", message=str(exc))
+                ]
+                break
             except Exception as exc:
                 print(
                     f"[agent] LLM attempt {attempt + 1} failed: "
@@ -160,6 +188,7 @@ class LLMAnalyzer:
             **insight.meta,
             "validation_issues": [i.message for i in last_issues],
             "degraded": True,
+            "cache": "miss",
         }
         return insight, last_issues
 
