@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from typing import Protocol
 
@@ -11,6 +12,8 @@ from app.contracts.models import (
     StepEvent,
 )
 from app.llm.openai_compat import OpenAICompatClient
+from app.llm.prompts import SYSTEM_PROMPT, build_repair_prompt
+from app.pipeline.validators import ValidationIssue, format_issues, validate_insight
 
 AgentEvent = dict[str, str]
 
@@ -87,34 +90,119 @@ class LLMAnalyzer:
         self.model = model
 
     async def analyze(self, payload: AnalysisRequest) -> AsyncIterator[AgentEvent]:
-        yield step("retrieving", "running", "Собираем контекст и источники")
-        await asyncio.sleep(0.05)
-        yield step("retrieving", "done", "Контекст собран")
+        yield step("planning", "running", "Планируем анализ")
+        yield step("planning", "done", "План готов")
 
-        yield step("analyzing", "running", "Модель оценивает влияние события")
-        insight = await self._generate(payload)
-        yield step("analyzing", "done", "Вывод AI готов")
+        yield step("retrieving", "running", "Проверяем evidence")
+        await asyncio.sleep(0.05)
+        yield step("retrieving", "done", f"Evidence: {len(payload.evidence)} источников")
+
+        yield step("analyzing", "running", "Модель формирует инсайт")
+        insight, issues = await self._generate(payload)
+        yield step("analyzing", "done", "Инсайт готов")
+
+        yield step("validating", "running", "Проверяем источники и структуру")
+        if issues:
+            yield step("validating", "done", f"Замечаний: {len(issues)}")
+        else:
+            yield step("validating", "done", "Валидация пройдена")
+
         yield result(insight)
 
-    async def _generate(self, payload: AnalysisRequest) -> Insight:
-        system = (
-            "Ты аналитик крупного банка. Оцени влияние события на компанию. "
-            "Верни только JSON по схеме Insight. Не придумывай источники: используй "
-            "только source_id из evidence."
-        )
-        user = payload.model_dump_json()
-        last_error: Exception | None = None
+    async def _generate(
+        self, payload: AnalysisRequest
+    ) -> tuple[Insight, list[ValidationIssue]]:
+        last_raw: dict | None = None
+        last_issues: list[ValidationIssue] = []
 
-        for _ in range(2):
+        for attempt in range(2):
+            user = payload.model_dump_json()
+            if attempt == 1 and last_raw is not None:
+                user = build_repair_prompt(
+                    json.dumps(last_raw, ensure_ascii=False),
+                    format_issues(last_issues),
+                )
             try:
-                raw = await self.client.complete_json(system, user)
-                raw.setdefault("meta", {})
-                raw["meta"].update({"model": self.model, "prompt_version": "v1"})
-                return Insight.model_validate(raw)
+                raw = await self.client.complete_json(SYSTEM_PROMPT, user)
+                last_raw = raw
+                print(f"[agent] raw keys={list(raw.keys())}")
+                insight = self._to_insight(raw)
+                issues = validate_insight(insight, payload)
+                if not issues:
+                    return insight, []
+                last_issues = issues
+                print(
+                    f"[agent] validation attempt {attempt + 1} failed: "
+                    f"{format_issues(issues)}"
+                )
             except Exception as exc:
-                last_error = exc
+                print(
+                    f"[agent] LLM attempt {attempt + 1} failed: "
+                    f"{type(exc).__name__}: {exc!r}"
+                )
+                last_issues = [
+                    ValidationIssue(
+                        code="llm_error",
+                        message=f"{type(exc).__name__}: {exc!r}",
+                    )
+                ]
 
-        raise ValueError(f"agent failed to produce valid insight: {last_error}")
+        insight = self._to_insight(last_raw or self._fallback(payload))
+        insight.meta = {
+            **insight.meta,
+            "validation_issues": [i.message for i in last_issues],
+            "degraded": True,
+        }
+        return insight, last_issues
+
+    def _to_insight(self, raw: dict) -> Insight:
+        raw.setdefault("meta", {})
+        raw["meta"].update({"model": self.model, "prompt_version": "v2"})
+        # подстраховка: если LLM забыла legacy-поля, выведем их из структурных
+        if not raw.get("bank_position"):
+            raw["bank_position"] = raw.get("bank_view", {}).get("text", "")
+        if not raw.get("ai_conclusion"):
+            raw["ai_conclusion"] = raw.get("ai_view", {}).get("text", "")
+        if not raw.get("risks"):
+            raw["risks"] = [
+                c.get("text", "") for c in raw.get("structured_risks", [])
+            ]
+        if not raw.get("opportunities"):
+            raw["opportunities"] = [
+                c.get("text", "") for c in raw.get("structured_opportunities", [])
+            ]
+        return Insight.model_validate(raw)
+
+    def _fallback(self, payload: AnalysisRequest) -> dict:
+        src = [
+            {"source_id": e.source_id, "title": e.title, "url": e.url}
+            for e in payload.evidence
+        ]
+        return {
+            "summary": f"{payload.company.name}: {payload.event.title}",
+            "why_it_matters": "Не удалось получить ответ LLM; показан безопасный каркас.",
+            "facts": [],
+            "hypotheses": [
+                {
+                    "text": "Требуется повторный анализ: модель недоступна.",
+                    "source_ids": [e.source_id for e in payload.evidence],
+                    "confidence": "low",
+                }
+            ],
+            "structured_risks": [],
+            "structured_opportunities": [],
+            "bank_position": "",
+            "bank_view": {"used": False, "text": "", "source_ids": []},
+            "ai_conclusion": "Вывод AI недоступен.",
+            "ai_view": {"text": "", "source_ids": []},
+            "risks": ["Анализ не завершён — источники не обработаны моделью."],
+            "opportunities": [],
+            "actions": ["Повторить запрос позже."],
+            "sources": src,
+            "confidence": 0.1,
+            "disclaimer": "Не является инвестиционной рекомендацией",
+            "meta": {"degraded": True},
+        }
 
 
 def create_analyzer(settings: Settings) -> Analyzer:
