@@ -45,6 +45,29 @@ class Source(BaseModel):
     url: AnyUrl
 
 
+class Confidence(Enum):
+    low = 'low'
+    medium = 'medium'
+    high = 'high'
+
+
+class CitedClaim(BaseModel):
+    text: str
+    source_ids: list[str] | None = None
+    confidence: Confidence | None = None
+
+
+class BankView(BaseModel):
+    used: bool | None = None
+    text: str | None = None
+    source_ids: list[str] | None = None
+
+
+class AIView(BaseModel):
+    text: str | None = None
+    source_ids: list[str] | None = None
+
+
 class Insight(BaseModel):
     summary: str
     why_it_matters: str
@@ -55,6 +78,13 @@ class Insight(BaseModel):
     sources: list[Source]
     actions: list[str]
     confidence: confloat(ge=0.0, le=1.0)
+    facts: list[CitedClaim] | None = None
+    hypotheses: list[CitedClaim] | None = None
+    structured_risks: list[CitedClaim] | None = None
+    structured_opportunities: list[CitedClaim] | None = None
+    bank_view: BankView | None = None
+    ai_view: AIView | None = None
+    disclaimer: str | None = None
     meta: dict[str, Any] | None = None
 
 

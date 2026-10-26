@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Insight, StepEvent } from "../../api/types";
+import type { CitedClaim, Insight, StepEvent } from "../../api/types";
 
 type Props = {
   steps: StepEvent[];
@@ -9,9 +9,12 @@ type Props = {
 };
 
 const stepLabels: Record<string, string> = {
+  planning: "Планирование",
+  enriching: "Догрузка контекста",
   retrieving: "Поиск источников",
   ranking: "Оценка влияния",
   analyzing: "Анализ AI",
+  validating: "Проверка источников",
 };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -22,6 +25,71 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       </h4>
       <div className="mt-1.5 text-sm leading-6 text-slate-700">{children}</div>
     </div>
+  );
+}
+
+function Citations({ ids, sourceIndex }: { ids: string[]; sourceIndex: Map<string, number> }) {
+  if (ids.length === 0) {
+    return null;
+  }
+  return (
+    <sup className="ml-1 inline-flex gap-1">
+      {ids.map((id) => {
+        const index = sourceIndex.get(id);
+        return (
+          <span
+            key={id}
+            title={id}
+            className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[10px] text-slate-500"
+          >
+            {index ?? "?"}
+          </span>
+        );
+      })}
+    </sup>
+  );
+}
+
+function ClaimList({
+  title,
+  claims,
+  sourceIndex,
+  muted = false,
+}: {
+  title: string;
+  claims: CitedClaim[] | undefined;
+  sourceIndex: Map<string, number>;
+  muted?: boolean;
+}) {
+  if (!claims || claims.length === 0) {
+    return null;
+  }
+  return (
+    <Section title={title}>
+      <ul className={`space-y-1.5 ${muted ? "text-slate-500" : ""}`}>
+        {claims.map((claim, index) => (
+          <li key={`${title}-${index}-${claim.text}`}>
+            {claim.text}
+            <Citations ids={claim.source_ids} sourceIndex={sourceIndex} />
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+function StringList({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) {
+    return null;
+  }
+  return (
+    <Section title={title}>
+      <ul className="list-disc space-y-1 pl-4">
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 
@@ -63,6 +131,22 @@ export function AnalysisPanel({ steps, insight, status, error }: Props) {
     );
   }
 
+  const sourceIndex = new Map(
+    insight.sources.map((source, index) => [source.source_id, index + 1] as const),
+  );
+  const risks: CitedClaim[] =
+    insight.structured_risks && insight.structured_risks.length > 0
+      ? insight.structured_risks
+      : insight.risks.map((text) => ({ text, source_ids: [] }));
+  const opportunities: CitedClaim[] =
+    insight.structured_opportunities && insight.structured_opportunities.length > 0
+      ? insight.structured_opportunities
+      : insight.opportunities.map((text) => ({ text, source_ids: [] }));
+  const bankView = insight.bank_view;
+  const bankText = bankView?.used ? bankView.text : insight.bank_position;
+  const aiText = insight.ai_view?.text?.trim() ? insight.ai_view.text : insight.ai_conclusion;
+  const disclaimer = insight.disclaimer?.trim() || "Не является инвестиционной рекомендацией";
+
   return (
     <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-5">
       <div className="flex items-center justify-between gap-4">
@@ -75,48 +159,38 @@ export function AnalysisPanel({ steps, insight, status, error }: Props) {
       <Section title="Что случилось">{insight.summary}</Section>
       <Section title="Почему это важно">{insight.why_it_matters}</Section>
 
+      <ClaimList title="Факты" claims={insight.facts} sourceIndex={sourceIndex} />
+      <ClaimList title="Гипотезы" claims={insight.hypotheses} sourceIndex={sourceIndex} muted />
+
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl bg-amber-50 p-4">
-          <Section title="Риски">
-            <ul className="list-disc space-y-1 pl-4">
-              {insight.risks.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </Section>
+          <ClaimList title="Риски" claims={risks} sourceIndex={sourceIndex} />
         </div>
         <div className="rounded-xl bg-emerald-50 p-4">
-          <Section title="Возможности">
-            <ul className="list-disc space-y-1 pl-4">
-              {insight.opportunities.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </Section>
+          <ClaimList title="Возможности" claims={opportunities} sourceIndex={sourceIndex} />
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 p-4">
-          <Section title="Позиция банка">{insight.bank_position}</Section>
-        </div>
-        <div className="rounded-xl border border-slate-200 p-4">
-          <Section title="Вывод AI">{insight.ai_conclusion}</Section>
-        </div>
+        {bankText.trim() !== "" && (
+          <div className="rounded-xl border border-slate-200 p-4">
+            <Section title="Позиция банка">{bankText}</Section>
+          </div>
+        )}
+        {aiText.trim() !== "" && (
+          <div className="rounded-xl border border-slate-200 p-4">
+            <Section title="Вывод AI">{aiText}</Section>
+          </div>
+        )}
       </div>
 
-      <Section title="Действия">
-        <ul className="list-disc space-y-1 pl-4">
-          {insight.actions.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </Section>
+      <StringList title="Действия" items={insight.actions} />
 
       <Section title="Источники">
-        <ul className="space-y-2">
-          {insight.sources.map((source) => (
-            <li key={source.source_id}>
+        <ol className="space-y-2">
+          {insight.sources.map((source, index) => (
+            <li key={source.source_id} className="flex gap-2">
+              <span className="font-mono text-[10px] text-slate-400">{index + 1}</span>
               <a
                 href={source.url}
                 target="_blank"
@@ -127,8 +201,12 @@ export function AnalysisPanel({ steps, insight, status, error }: Props) {
               </a>
             </li>
           ))}
-        </ul>
+        </ol>
       </Section>
+
+      <p className="border-t border-slate-100 pt-3 text-[11px] leading-5 text-slate-400">
+        {disclaimer}
+      </p>
     </div>
   );
 }
