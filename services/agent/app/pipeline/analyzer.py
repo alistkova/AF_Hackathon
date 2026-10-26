@@ -117,9 +117,7 @@ class LLMAnalyzer:
 
         yield result(insight)
 
-    async def _generate(
-        self, payload: AnalysisRequest
-    ) -> tuple[Insight, list[ValidationIssue]]:
+    async def _generate(self, payload: AnalysisRequest) -> tuple[Insight, list[ValidationIssue]]:
         from app.llm import budget
         from app.pipeline import cache
 
@@ -161,21 +159,13 @@ class LLMAnalyzer:
                     insight.meta["cache"] = "miss"
                     return insight, []
                 last_issues = issues
-                print(
-                    f"[agent] validation attempt {attempt + 1} failed: "
-                    f"{format_issues(issues)}"
-                )
+                print(f"[agent] validation attempt {attempt + 1} failed: {format_issues(issues)}")
             except budget.BudgetExceeded as exc:
                 print(f"[agent] budget exceeded: {exc}")
-                last_issues = [
-                    ValidationIssue(code="budget_exceeded", message=str(exc))
-                ]
+                last_issues = [ValidationIssue(code="budget_exceeded", message=str(exc))]
                 break
             except Exception as exc:
-                print(
-                    f"[agent] LLM attempt {attempt + 1} failed: "
-                    f"{type(exc).__name__}: {exc!r}"
-                )
+                print(f"[agent] LLM attempt {attempt + 1} failed: {type(exc).__name__}: {exc!r}")
                 last_issues = [
                     ValidationIssue(
                         code="llm_error",
@@ -199,6 +189,7 @@ class LLMAnalyzer:
         # Автоматические подсказки для трассировки
         if payload is not None:
             from app.llm.sources import is_alfa_source
+
             alfa_sources = [e.source_id for e in payload.evidence if is_alfa_source(e.source_id)]
             if alfa_sources:
                 raw["meta"]["alfa_analytics_sources"] = alfa_sources
@@ -225,10 +216,7 @@ class LLMAnalyzer:
         return Insight.model_validate(raw)
 
     def _fallback(self, payload: AnalysisRequest) -> dict:
-        src = [
-            {"source_id": e.source_id, "title": e.title, "url": e.url}
-            for e in payload.evidence
-        ]
+        src = [{"source_id": e.source_id, "title": e.title, "url": e.url} for e in payload.evidence]
         return {
             "summary": f"{payload.company.name}: {payload.event.title}",
             "why_it_matters": "Не удалось получить ответ LLM; показан безопасный каркас.",

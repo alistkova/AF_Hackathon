@@ -78,7 +78,7 @@ def main() -> None:
     parser.add_argument(
         "--file",
         default=None,
-        help="path to metrics file (default: <metrics_dir>/%s)" % _FILENAME,
+        help=f"path to metrics file (default: <metrics_dir>/{_FILENAME})",
     )
     parser.add_argument(
         "--group",

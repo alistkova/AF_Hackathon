@@ -6,6 +6,7 @@ Usage:
   uv run python scripts/eval_agent.py --stub     # stub (без токенов, для отладки)
   uv run python scripts/eval_agent.py --id 01_rate_magnit_alfa
 """
+
 from __future__ import annotations
 
 import argparse
@@ -92,12 +93,12 @@ async def main() -> int:
     else:
         if not settings.llm_base_url or not settings.llm_api_key:
             print(
-                "ERROR: LLM_BASE_URL/LLM_API_KEY не заданы. "
-                "Запусти с --stub или поправь .env",
+                "ERROR: LLM_BASE_URL/LLM_API_KEY не заданы. Запусти с --stub или поправь .env",
                 file=sys.stderr,
             )
             return 2
         from app.llm.openai_compat import OpenAICompatClient
+
         client = OpenAICompatClient(
             base_url=settings.llm_base_url,
             api_key=settings.llm_api_key,

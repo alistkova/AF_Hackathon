@@ -1,7 +1,7 @@
 import json
 import logging
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.config import get_settings
@@ -23,7 +23,7 @@ class MetricsRecorder:
     def record(self, **fields: object) -> None:
         if not self.enabled:
             return
-        entry = {"ts": datetime.now(timezone.utc).isoformat(), **fields}
+        entry = {"ts": datetime.now(UTC).isoformat(), **fields}
         with self._write_lock:
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)

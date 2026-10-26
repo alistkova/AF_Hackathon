@@ -1,4 +1,5 @@
 """Простой in-memory кеш инсайтов с TTL."""
+
 from __future__ import annotations
 
 import hashlib
@@ -21,12 +22,14 @@ _store: dict[str, CacheEntry] = {}
 
 def make_key(payload: AnalysisRequest) -> str:
     ids = sorted(e.source_id for e in payload.evidence)
-    raw = "|".join([
-        payload.company.id,
-        payload.event.id,
-        ",".join(ids),
-        payload.locale,
-    ])
+    raw = "|".join(
+        [
+            payload.company.id,
+            payload.event.id,
+            ",".join(ids),
+            payload.locale,
+        ]
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
