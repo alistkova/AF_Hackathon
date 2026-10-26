@@ -38,3 +38,30 @@ processed_files.json
 *.faiss
 *.pkl
 *.npy
+
+# --- agent local ---
+services/agent/.env
+services/agent/data/
+services/agent/.ruff_cache/
+services/agent/.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Windows NTFS artifacts
+*:Zone.Identifier
+*Zone.Identifier*
+
+# RAG / ML cache
+.alfa_rag_index/
+*.faiss
+*.index
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.log
