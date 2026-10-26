@@ -39,9 +39,7 @@ def test_valid_insight_passes():
 
 
 def test_unknown_source_is_caught():
-    assert "unknown_source" in codes(
-        insight(facts=[CitedClaim(text="f", source_ids=["ghost"])])
-    )
+    assert "unknown_source" in codes(insight(facts=[CitedClaim(text="f", source_ids=["ghost"])]))
 
 
 def test_missing_disclaimer():
@@ -64,27 +62,35 @@ def test_empty_claims():
 
 def test_bank_view_no_alfa_source():
     assert "bank_view_no_alfa_source" in codes(
-        insight(bank_view={
-            "used": True,
-            "text": "позиция",
-            "source_ids": ["n1"],   # n1 — не Alfa-источник
-        })
+        insight(
+            bank_view={
+                "used": True,
+                "text": "позиция",
+                "source_ids": ["n1"],  # n1 — не Alfa-источник
+            }
+        )
     )
 
 
 def test_bank_view_with_alfa_source_ok():
     # если в evidence есть ALFA-источник, validator не ругается
     from app.contracts.models import AnalysisRequest
-    p = AnalysisRequest.model_validate({
-        "request_id": "t",
-        "company": {"id": "magnit", "name": "Магнит"},
-        "event": {"id": "n1", "title": "Событие"},
-        "evidence": [
-            {"source_id": "n1", "title": "t", "url": "https://x"},
-            {"source_id": "rag:ALFA-Macro_Insights-Policy_Rate_11Sep.pdf:1:0",
-             "title": "alfa", "url": "rag://x"},
-        ],
-    })
+
+    p = AnalysisRequest.model_validate(
+        {
+            "request_id": "t",
+            "company": {"id": "magnit", "name": "Магнит"},
+            "event": {"id": "n1", "title": "Событие"},
+            "evidence": [
+                {"source_id": "n1", "title": "t", "url": "https://x"},
+                {
+                    "source_id": "rag:ALFA-Macro_Insights-Policy_Rate_11Sep.pdf:1:0",
+                    "title": "alfa",
+                    "url": "rag://x",
+                },
+            ],
+        }
+    )
     i = insight(
         bank_view={
             "used": True,

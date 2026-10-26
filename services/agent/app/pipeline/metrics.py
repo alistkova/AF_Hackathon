@@ -1,4 +1,5 @@
 """Метрики качества инсайта. Чистые функции — без LLM и сети."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -55,9 +56,7 @@ def has_alfa_in_evidence(payload: AnalysisRequest) -> bool:
     return any(is_alfa_source(e.source_id) for e in payload.evidence)
 
 
-def evaluate_event(
-    insight: Insight, payload: AnalysisRequest
-) -> EventMetrics:
+def evaluate_event(insight: Insight, payload: AnalysisRequest) -> EventMetrics:
     issues: list[str] = []
     cov = source_coverage(insight)
     sep = separation_ok(insight)
@@ -97,7 +96,8 @@ def aggregate(rows: list[EventMetrics]) -> dict:
     expected_rows = [r for r in rows if r.bank_view_expected]
     used_when_expected = (
         sum(1 for r in expected_rows if r.bank_view_used) / len(expected_rows)
-        if expected_rows else 1.0
+        if expected_rows
+        else 1.0
     )
     return {
         "total": n,

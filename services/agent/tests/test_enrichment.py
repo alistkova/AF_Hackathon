@@ -22,8 +22,10 @@ def payload(evidence_count: int = 1) -> AnalysisRequest:
 @pytest.fixture(autouse=True)
 def no_news(monkeypatch):
     """По умолчанию новости не тянем — тесты не должны ходить в сеть."""
+
     async def fake_news(_payload):
         return []
+
     monkeypatch.setattr(enrichment, "_news_fallback", fake_news)
 
 
@@ -45,9 +47,11 @@ async def test_skip_when_evidence_is_enough(monkeypatch):
 async def test_adds_chunks_from_company_search(monkeypatch):
     def fake_search(**kwargs):
         if kwargs.get("company_id"):
-            return {"chunks": [
-                {"content": "ctx1", "source": "news.pdf", "page": 2, "chunk": 1},
-            ]}
+            return {
+                "chunks": [
+                    {"content": "ctx1", "source": "news.pdf", "page": 2, "chunk": 1},
+                ]
+            }
         return {"chunks": []}
 
     monkeypatch.setattr(enrichment, "search_chunks", fake_search)
@@ -81,10 +85,11 @@ async def test_fallback_to_global_search(monkeypatch):
 @pytest.mark.asyncio
 async def test_caps_at_max(monkeypatch):
     def fake_search(**_):
-        return {"chunks": [
-            {"content": f"c{i}", "source": "s.pdf", "page": 1, "chunk": i}
-            for i in range(20)
-        ]}
+        return {
+            "chunks": [
+                {"content": f"c{i}", "source": "s.pdf", "page": 1, "chunk": i} for i in range(20)
+            ]
+        }
 
     monkeypatch.setattr(enrichment, "search_chunks", fake_search)
     monkeypatch.setattr(enrichment, "list_chunks", lambda **_: {"chunks": []})

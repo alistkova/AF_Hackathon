@@ -192,7 +192,9 @@ def rag_stream(
                         break
         _record("rag.stream", model_name, time.perf_counter() - start, True, None, done)
     except requests.exceptions.ConnectionError:
-        _record("rag.stream", model_name, time.perf_counter() - start, False, "connection_error", {})
+        _record(
+            "rag.stream", model_name, time.perf_counter() - start, False, "connection_error", {}
+        )
         yield f"Error: Cannot connect to Ollama at {OLLAMA_BASE_URL}"
     except Exception as e:
         _record("rag.stream", model_name, time.perf_counter() - start, False, str(e), {})
