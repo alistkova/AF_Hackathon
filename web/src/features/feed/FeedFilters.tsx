@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { FeedFacet, FeedFacets } from "../../api/types";
 import {
   activeFeedFilterCount,
@@ -103,19 +103,8 @@ export function FeedFilters({ filters, facets, onChange, onReset }: Props) {
     typeof window === "undefined" ? true : window.matchMedia("(min-width: 1024px)").matches,
   );
   const [draft, setDraft] = useState<FeedFilterState>(filters);
-  const previousFilters = useRef(filters);
 
   useEffect(() => {
-    const previous = previousFilters.current;
-    previousFilters.current = filters;
-
-    if (
-      previous.query !== filters.query &&
-      feedFiltersEqual({ ...previous, query: filters.query }, filters)
-    ) {
-      setDraft((current) => ({ ...current, query: filters.query }));
-      return;
-    }
     setDraft(filters);
   }, [filters]);
 
@@ -162,6 +151,21 @@ export function FeedFilters({ filters, facets, onChange, onReset }: Props) {
         id="feed-filters"
         className={`${open ? "mt-3 block" : "hidden"} space-y-3 lg:mt-3 lg:block`}
       >
+        <label className="block">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Поиск
+          </span>
+          <input
+            type="search"
+            value={draft.query}
+            onChange={(event) => setDraft({ ...draft, query: event.target.value })}
+            placeholder="Заголовок, текст или тег"
+            aria-label="Поиск по ленте"
+            maxLength={200}
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-[#ef3124]"
+          />
+        </label>
+
         <FacetGroup
           label="Источники"
           facets={sources}
