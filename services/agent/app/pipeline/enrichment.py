@@ -1,4 +1,5 @@
 """RAG-обогащение evidence: если контекста мало, подтягиваем chunks из content service."""
+
 from __future__ import annotations
 
 import httpx
@@ -49,14 +50,21 @@ def _industry_to_sector(industry: str) -> str:
     if not industry:
         return ""
     mapping = {
-        "ритейл": "retail", "розниц": "retail",
-        "металлург": "metallurgy", "сталь": "metallurgy",
-        "нефт": "oil_gas", "газ": "oil_gas",
-        "банк": "banking", "финанс": "banking",
-        "ит": "it", "технолог": "it",
+        "ритейл": "retail",
+        "розниц": "retail",
+        "металлург": "metallurgy",
+        "сталь": "metallurgy",
+        "нефт": "oil_gas",
+        "газ": "oil_gas",
+        "банк": "banking",
+        "финанс": "banking",
+        "ит": "it",
+        "технолог": "it",
         "телеком": "telecom",
-        "сельхоз": "agriculture", "агро": "agriculture",
-        "добыч": "mining", "шахт": "mining",
+        "сельхоз": "agriculture",
+        "агро": "agriculture",
+        "добыч": "mining",
+        "шахт": "mining",
         "энергетик": "energy",
     }
     low = industry.lower()

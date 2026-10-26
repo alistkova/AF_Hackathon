@@ -27,8 +27,7 @@ _use_ocr = get_settings().rag_use_ocr
 
 
 OCR_AVAILABLE = _use_ocr and all(
-    importlib.util.find_spec(mod) is not None
-    for mod in ("pymupdf", "pytesseract", "PIL")
+    importlib.util.find_spec(mod) is not None for mod in ("pymupdf", "pytesseract", "PIL")
 )
 
 

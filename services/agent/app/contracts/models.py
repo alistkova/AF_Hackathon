@@ -48,6 +48,8 @@ class Source(BaseModel):
     source_id: str
     title: str
     url: str
+
+
 class CitedClaim(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -92,6 +94,7 @@ class Insight(BaseModel):
     bank_view: BankView = Field(default_factory=BankView)
     ai_view: AIView = Field(default_factory=AIView)
     disclaimer: str = "Не является инвестиционной рекомендацией"
+
 
 class StepEvent(BaseModel):
     type: Literal["step"] = "step"

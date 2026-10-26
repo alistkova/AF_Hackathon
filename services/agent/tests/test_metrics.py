@@ -21,23 +21,34 @@ from app.pipeline.metrics import (
 def payload(alfa: bool = True) -> AnalysisRequest:
     ev = [{"source_id": "n1", "title": "t", "url": "https://x"}]
     if alfa:
-        ev.append({"source_id": "rag:ALFA-Macro_Insights-Policy_Rate_11Sep.pdf:1:0",
-                   "title": "a", "url": "rag://a"})
-    return AnalysisRequest.model_validate({
-        "request_id": "t",
-        "company": {"id": "magnit", "name": "Магнит"},
-        "event": {"id": "e", "title": "t"},
-        "evidence": ev,
-    })
+        ev.append(
+            {
+                "source_id": "rag:ALFA-Macro_Insights-Policy_Rate_11Sep.pdf:1:0",
+                "title": "a",
+                "url": "rag://a",
+            }
+        )
+    return AnalysisRequest.model_validate(
+        {
+            "request_id": "t",
+            "company": {"id": "magnit", "name": "Магнит"},
+            "event": {"id": "e", "title": "t"},
+            "evidence": ev,
+        }
+    )
 
 
 def insight(**over) -> Insight:
     base = dict(
-        summary="s", why_it_matters="w",
-        risks=["r"], opportunities=["o"],
-        bank_position="", ai_conclusion="a",
+        summary="s",
+        why_it_matters="w",
+        risks=["r"],
+        opportunities=["o"],
+        bank_position="",
+        ai_conclusion="a",
         sources=[Source(source_id="n1", title="t", url="https://x")],
-        actions=["a"], confidence=0.5,
+        actions=["a"],
+        confidence=0.5,
         facts=[CitedClaim(text="f", source_ids=["n1"])],
         ai_view=AIView(text="ai", source_ids=["n1"]),
     )
@@ -50,10 +61,12 @@ def test_source_coverage_full():
 
 
 def test_source_coverage_partial():
-    i = insight(facts=[
-        CitedClaim(text="f", source_ids=["n1"]),
-        CitedClaim(text="f2", source_ids=[]),
-    ])
+    i = insight(
+        facts=[
+            CitedClaim(text="f", source_ids=["n1"]),
+            CitedClaim(text="f2", source_ids=[]),
+        ]
+    )
     assert source_coverage(i) == 0.5
 
 
@@ -71,10 +84,13 @@ def test_separation_bad_when_used_non_alfa():
 
 
 def test_separation_ok_when_used_alfa():
-    i = insight(bank_view=BankView(
-        used=True, text="x",
-        source_ids=["rag:ALFA-Macro_Insights-Policy_Rate_11Sep.pdf:1:0"],
-    ))
+    i = insight(
+        bank_view=BankView(
+            used=True,
+            text="x",
+            source_ids=["rag:ALFA-Macro_Insights-Policy_Rate_11Sep.pdf:1:0"],
+        )
+    )
     assert separation_ok(i) is True
 
 
@@ -104,10 +120,14 @@ def test_aggregate_and_thresholds():
     rows = [
         evaluate_event(insight(), payload(alfa=False)),
         evaluate_event(
-            insight(bank_view=BankView(
-                used=True, text="x",
-                source_ids=["rag:ALFA-Macro_Insights-Policy_Rate_11Sep.pdf:1:0"],
-                ), bank_position="x"),
+            insight(
+                bank_view=BankView(
+                    used=True,
+                    text="x",
+                    source_ids=["rag:ALFA-Macro_Insights-Policy_Rate_11Sep.pdf:1:0"],
+                ),
+                bank_position="x",
+            ),
             payload(alfa=True),
         ),
     ]
@@ -117,13 +137,20 @@ def test_aggregate_and_thresholds():
 
 
 def test_recorder_writes_jsonl_line(tmp_path):
-    from app.metrics.recorder import MetricsRecorder, _FILENAME
+    from app.metrics.recorder import _FILENAME, MetricsRecorder
 
     sink = MetricsRecorder(directory=tmp_path, enabled=True)
     sink.record(
-        source="agent.analyze", model="m", e2el_s=2.0,
-        input_tokens=100, output_tokens=50, total_tokens=150,
-        output_tput=25.0, total_tput=75.0, ok=True, error=None,
+        source="agent.analyze",
+        model="m",
+        e2el_s=2.0,
+        input_tokens=100,
+        output_tokens=50,
+        total_tokens=150,
+        output_tput=25.0,
+        total_tput=75.0,
+        ok=True,
+        error=None,
     )
     target = tmp_path / _FILENAME
     lines = target.read_text(encoding="utf-8").strip().splitlines()
@@ -137,7 +164,7 @@ def test_recorder_writes_jsonl_line(tmp_path):
 
 
 def test_recorder_disabled_writes_nothing(tmp_path):
-    from app.metrics.recorder import MetricsRecorder, _FILENAME
+    from app.metrics.recorder import _FILENAME, MetricsRecorder
 
     sink = MetricsRecorder(directory=tmp_path, enabled=False)
     sink.record(source="rag.query", model="m", e2el_s=1.0)
@@ -145,7 +172,7 @@ def test_recorder_disabled_writes_nothing(tmp_path):
 
 
 def test_recorder_does_not_fail_on_bad_dir(tmp_path):
-    from app.metrics.recorder import MetricsRecorder, _FILENAME
+    from app.metrics.recorder import _FILENAME, MetricsRecorder
 
     bad = tmp_path / "no" / "such" / "nest"
     sink = MetricsRecorder(directory=bad, enabled=True)
@@ -155,14 +182,20 @@ def test_recorder_does_not_fail_on_bad_dir(tmp_path):
 
 def test_aggregate_summarizes(tmp_path):
     from app.metrics.aggregate import summarize
-    from app.metrics.recorder import MetricsRecorder, _FILENAME
+    from app.metrics.recorder import _FILENAME, MetricsRecorder
 
     sink = MetricsRecorder(directory=tmp_path, enabled=True)
     for i in range(1, 4):
         sink.record(
-            source="rag.query", model="m", e2el_s=float(i),
-            input_tokens=10, output_tokens=5, total_tokens=15,
-            output_tput=1.0, total_tput=3.0, ok=True,
+            source="rag.query",
+            model="m",
+            e2el_s=float(i),
+            input_tokens=10,
+            output_tokens=5,
+            total_tokens=15,
+            output_tput=1.0,
+            total_tput=3.0,
+            ok=True,
         )
     result = summarize(tmp_path / _FILENAME, group="source")
     assert result["total_entries"] == 3
