@@ -6,7 +6,7 @@
 
 | Модель | Назначение | Провайдер | Доступ |
 |---|---|---|---|
-| `deepseek/deepseek-v4.1-flash` | Основной анализ: интерпретация события, риски, возможности, bank_view/ai_view | DeepSeek, через OpenAI-совместимый гейтвей организаторов | `https://changellenge.up.railway.app/v1` (основной), `https://api.alfahack-gateway26.ru/v1` (резервный) |
+| `deepseek/deepseek-v4.1-flash` | Основной анализ: интерпретация события, риски, возможности, bank_view/ai_view | DeepSeek, через OpenAI-совместимый гейтвей организаторов | `https://changellenge.up.railway.app/v1`; адрес задаётся через `LLM_BASE_URL`, резервный — через `LLM_FALLBACK_BASE_URL` (по умолчанию пуст) |
 | `qwen/qwen3.6-35b-a3b` | Резервная модель (не активирована в демо) | Qwen, тот же гейтвей | — |
 | `google/gemma-4-26b-a4b-it` | Резервная модель для извлечения/классификации (не активирована) | Google, тот же гейтвей | — |
 

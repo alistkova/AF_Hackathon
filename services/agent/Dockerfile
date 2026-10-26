@@ -12,6 +12,7 @@ RUN useradd --create-home --uid 10001 app
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY app ./app
+RUN mkdir -p /app/metrics && chown -R app:app /app/metrics
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 USER app

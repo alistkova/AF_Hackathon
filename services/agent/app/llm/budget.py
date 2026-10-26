@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -19,6 +20,9 @@ _STATE_FILE = _STATE_DIR / "usage.json"
 
 # МСК = UTC+3, сброс бюджета в 3:00 МСК = 00:00 UTC
 _MSK = timezone(timedelta(hours=3))
+
+# Счётчик общий для процесса: параллельные задачи не должны терять апдейты.
+_LOCK = threading.Lock()
 
 
 def _today() -> str:
@@ -36,7 +40,9 @@ def _load() -> dict:
 
 def _save(data: dict) -> None:
     _STATE_DIR.mkdir(parents=True, exist_ok=True)
-    _STATE_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = _STATE_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, _STATE_FILE)
 
 
 def cost_rub(input_tokens: int, output_tokens: int) -> float:
@@ -53,18 +59,19 @@ def today_usage() -> dict:
 
 
 def add_usage(input_tokens: int, output_tokens: int) -> dict:
-    data = _load()
-    day = _today()
-    entry = data.setdefault(
-        day,
-        {"input_tokens": 0, "output_tokens": 0, "cost_rub": 0.0, "calls": 0},
-    )
-    entry["input_tokens"] += int(input_tokens)
-    entry["output_tokens"] += int(output_tokens)
-    entry["cost_rub"] = round(entry["cost_rub"] + cost_rub(input_tokens, output_tokens), 4)
-    entry["calls"] += 1
-    _save(data)
-    return entry
+    with _LOCK:
+        data = _load()
+        day = _today()
+        entry = data.setdefault(
+            day,
+            {"input_tokens": 0, "output_tokens": 0, "cost_rub": 0.0, "calls": 0},
+        )
+        entry["input_tokens"] += int(input_tokens)
+        entry["output_tokens"] += int(output_tokens)
+        entry["cost_rub"] = round(entry["cost_rub"] + cost_rub(input_tokens, output_tokens), 4)
+        entry["calls"] += 1
+        _save(data)
+        return entry
 
 
 def is_exceeded() -> bool:

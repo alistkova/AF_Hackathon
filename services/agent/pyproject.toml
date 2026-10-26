@@ -17,14 +17,14 @@ dependencies = [
   "pymupdf>=1.23.0",
   "requests>=2.31.0",
   "watchdog>=3.0.0",
-  "torch>=2.0.0",
-  "torchvision>=0.15.0",
 ]
 
 [project.optional-dependencies]
 hf = [
   "langchain-huggingface>=1.0,<2",
   "sentence-transformers>=3.0.0",
+  "torch>=2.0.0",
+  "torchvision>=0.15.0",
 ]
 ocr = [
   "pillow>=10.0",

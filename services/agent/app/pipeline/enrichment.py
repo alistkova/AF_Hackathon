@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 import httpx
 
 from app.config import get_settings
 from app.contracts.models import AnalysisRequest, Evidence
 from app.rag_system.pipeline import list_chunks, search_chunks
+
+logger = logging.getLogger(__name__)
 
 MAX_EVIDENCE = 8
 MIN_EVIDENCE = 3
@@ -76,13 +81,13 @@ def _industry_to_sector(industry: str) -> str:
 
 async def _news_fallback(payload: AnalysisRequest) -> list[Evidence]:
     """Если RAG пуст — тянем новости из content service по компании/сектору."""
-    s = get_settings()
-    url = f"{s.content_url}/api/v1/news"
-    params: dict[str, object] = {"kind": "news", "limit": NEWS_FALLBACK_LIMIT}
-    sector = _industry_to_sector(payload.company.industry)
-    if sector:
-        params["sector"] = sector
     try:
+        s = get_settings()
+        url = f"{s.content_url}/api/v1/news"
+        params: dict[str, object] = {"kind": "news", "limit": NEWS_FALLBACK_LIMIT}
+        sector = _industry_to_sector(payload.company.industry)
+        if sector:
+            params["sector"] = sector
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(url, params=params)
             r.raise_for_status()
@@ -94,7 +99,7 @@ async def _news_fallback(payload: AnalysisRequest) -> list[Evidence]:
             else:
                 items = []
     except Exception as exc:
-        print(f"[enrichment] news fallback failed: {exc!r}")
+        logger.warning("[enrichment] news fallback failed: %r", exc)
         return []
 
     result: list[Evidence] = []
@@ -104,7 +109,7 @@ async def _news_fallback(payload: AnalysisRequest) -> list[Evidence]:
         ev = _news_to_evidence(item)
         if ev is not None:
             result.append(ev)
-    print(f"[enrichment] news fallback: {len(result)} items (sector={sector or 'any'})")
+    logger.info("[enrichment] news fallback: %s items (sector=%s)", len(result), sector or "any")
     return result
 
 
@@ -138,34 +143,43 @@ async def enrich_evidence(payload: AnalysisRequest) -> AnalysisRequest:
 
     # 1. Semantic search по компании
     try:
-        search = search_chunks(
+        search = await asyncio.to_thread(
+            search_chunks,
             query=payload.event.title,
             k=5,
             company_id=payload.company.id,
         )
         add_chunks(search.get("chunks", []))
     except Exception as exc:
-        print(f"[enrichment] search_chunks (company) failed: {exc!r}")
+        logger.warning("[enrichment] search_chunks (company) failed: %r", exc)
 
     # 2. Fallback: global semantic search без фильтра по компании
     if len(gathered) < MIN_EVIDENCE:
         try:
-            search = search_chunks(query=payload.event.title, k=5)
+            search = await asyncio.to_thread(
+                search_chunks,
+                query=payload.event.title,
+                k=5,
+            )
             add_chunks(search.get("chunks", []))
         except Exception as exc:
-            print(f"[enrichment] search_chunks (global) failed: {exc!r}")
+            logger.warning("[enrichment] search_chunks (global) failed: %r", exc)
 
     # 3. Fallback: list chunks по компании (без семантики)
     if len(gathered) < MIN_EVIDENCE:
         try:
-            listing = list_chunks(company_id=payload.company.id, k=3)
+            listing = await asyncio.to_thread(
+                list_chunks,
+                company_id=payload.company.id,
+                k=3,
+            )
             add_chunks(listing.get("chunks", []))
         except Exception as exc:
-            print(f"[enrichment] list_chunks failed: {exc!r}")
+            logger.warning("[enrichment] list_chunks failed: %r", exc)
 
     # 4. Fallback: новости из content service по отрасли
     if len(gathered) < MIN_EVIDENCE:
         add_evidence(await _news_fallback(payload))
 
-    print(f"[enrichment] evidence {len(payload.evidence)} -> {len(gathered)}")
+    logger.info("[enrichment] evidence %s -> %s", len(payload.evidence), len(gathered))
     return payload.model_copy(update={"evidence": gathered})
