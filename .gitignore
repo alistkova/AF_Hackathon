@@ -66,3 +66,4 @@ venv/
 .vscode/
 *.log
 services/agent/reports/
+services/agent/metrics/

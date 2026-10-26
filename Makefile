@@ -134,6 +134,9 @@ rag-list: ## List chunks by metadata (usage: make rag-list COMPANY_ID=magnit)
 rag-clean: ## Remove the local RAG state cache (vectors stay in the content service)
 	cd services/agent && rm -rf $(RAG_INDEX_DIR)
 
+metrics: ## Summarize collected LLM product metrics (group by source,model)
+	cd services/agent && $(UV) run python -m app.metrics.aggregate --group source,model
+
 .PHONY: eval eval-stub
 eval:
 	cd services/agent && uv run python scripts/eval_agent.py

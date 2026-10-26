@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     rag_use_ocr: bool = False
     content_url: str = "http://localhost:8082"
 
+    metrics_enabled: bool = True
+    metrics_dir: str = str(_AGENT_DIR / "metrics")
+
     def step_delay(self) -> float:
         raw = self.agent_step_delay.strip().lower()
         if raw.endswith("ms"):
