@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import re
 from datetime import UTC, datetime
@@ -24,14 +25,11 @@ from .config import (
 
 _use_ocr = get_settings().rag_use_ocr
 
-try:
-    import pymupdf
-    import pytesseract
-    from PIL import Image
 
-    OCR_AVAILABLE = _use_ocr
-except ImportError:
-    OCR_AVAILABLE = False
+OCR_AVAILABLE = _use_ocr and all(
+    importlib.util.find_spec(mod) is not None
+    for mod in ("pymupdf", "pytesseract", "PIL")
+)
 
 
 COMPANY_PATTERNS = {

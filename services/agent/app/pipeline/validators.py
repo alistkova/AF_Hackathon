@@ -1,9 +1,10 @@
 """Детерминированные проверки инсайта перед отправкой клиенту."""
 from __future__ import annotations
-from app.llm.prompts import is_alfa_source
+
 from dataclasses import dataclass
 
 from app.contracts.models import AnalysisRequest, Insight
+from app.llm.prompts import is_alfa_source
 
 
 @dataclass

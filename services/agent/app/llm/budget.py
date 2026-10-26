@@ -54,7 +54,10 @@ def today_usage() -> dict:
 def add_usage(input_tokens: int, output_tokens: int) -> dict:
     data = _load()
     day = _today()
-    entry = data.setdefault(day, {"input_tokens": 0, "output_tokens": 0, "cost_rub": 0.0, "calls": 0})
+    entry = data.setdefault(
+        day,
+        {"input_tokens": 0, "output_tokens": 0, "cost_rub": 0.0, "calls": 0},
+    )
     entry["input_tokens"] += int(input_tokens)
     entry["output_tokens"] += int(output_tokens)
     entry["cost_rub"] = round(entry["cost_rub"] + cost_rub(input_tokens, output_tokens), 4)

@@ -1,9 +1,9 @@
 import json
+
 import pytest
-from app.llm.openai_compat import OpenAICompatClient
-from app.pipeline import cache
 
 from app.contracts.models import AnalysisRequest, Insight, ResultEvent
+from app.pipeline import cache
 from app.pipeline.analyzer import StubAnalyzer
 
 
@@ -38,7 +38,7 @@ async def test_stub_analyzer_returns_cited_insight() -> None:
 
 @pytest.mark.asyncio
 async def test_cache_hit_skips_llm(monkeypatch):
-    from app.contracts.models import AnalysisRequest, Insight
+    from app.contracts.models import AnalysisRequest
     from app.pipeline.analyzer import LLMAnalyzer
 
     cache.clear()

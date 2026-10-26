@@ -1,9 +1,18 @@
 from app.contracts.models import (
-    AIView, AnalysisRequest, BankView, CitedClaim, Insight, Source,
+    AIView,
+    AnalysisRequest,
+    BankView,
+    CitedClaim,
+    Insight,
+    Source,
 )
 from app.pipeline.metrics import (
-    aggregate, check_thresholds, evaluate_event, has_alfa_in_evidence,
-    separation_ok, source_coverage,
+    aggregate,
+    check_thresholds,
+    evaluate_event,
+    has_alfa_in_evidence,
+    separation_ok,
+    source_coverage,
 )
 
 

@@ -127,7 +127,7 @@ class LLMAnalyzer:
         if cached is not None:
             print("[cache] hit")
             try:
-                insight = self._to_insight(cached)
+                insight = self._to_insight(cached, payload)
                 insight.meta["cache"] = "hit"
                 return insight, []
             except Exception as exc:
@@ -154,7 +154,7 @@ class LLMAnalyzer:
                         "output_tokens": usage.get("completion_tokens"),
                     }
                 print(f"[agent] raw keys={list(raw.keys())}")
-                insight = self._to_insight(raw)
+                insight = self._to_insight(raw, payload)
                 issues = validate_insight(insight, payload)
                 if not issues:
                     cache.put(payload, raw)
@@ -183,7 +183,7 @@ class LLMAnalyzer:
                     )
                 ]
 
-        insight = self._to_insight(last_raw or self._fallback(payload))
+        insight = self._to_insight(last_raw or self._fallback(payload), payload)
         insight.meta = {
             **insight.meta,
             "validation_issues": [i.message for i in last_issues],
@@ -192,18 +192,32 @@ class LLMAnalyzer:
         }
         return insight, last_issues
 
-    def _to_insight(self, raw: dict) -> Insight:
+    def _to_insight(self, raw: dict, payload: AnalysisRequest | None = None) -> Insight:
         raw.setdefault("meta", {})
-        raw["meta"].update({"model": self.model, "prompt_version": "v2"})
-        # подстраховка: если LLM забыла legacy-поля, выведем их из структурных
+        raw["meta"].update({"model": self.model, "prompt_version": "v3"})
+
+        # Автоматические подсказки для трассировки
+        if payload is not None:
+            from app.llm.sources import is_alfa_source
+            alfa_sources = [e.source_id for e in payload.evidence if is_alfa_source(e.source_id)]
+            if alfa_sources:
+                raw["meta"]["alfa_analytics_sources"] = alfa_sources
+            company = payload.company
+            default_signals: list[str] = []
+            if company.industry:
+                default_signals.append(f"industry:{company.industry}")
+            if company.region:
+                default_signals.append(f"region:{company.region}")
+            if default_signals and not raw["meta"].get("signals_used"):
+                raw["meta"]["signals_used"] = default_signals
+
+        # Подстраховка для legacy-полей
         if not raw.get("bank_position"):
             raw["bank_position"] = raw.get("bank_view", {}).get("text", "")
         if not raw.get("ai_conclusion"):
             raw["ai_conclusion"] = raw.get("ai_view", {}).get("text", "")
         if not raw.get("risks"):
-            raw["risks"] = [
-                c.get("text", "") for c in raw.get("structured_risks", [])
-            ]
+            raw["risks"] = [c.get("text", "") for c in raw.get("structured_risks", [])]
         if not raw.get("opportunities"):
             raw["opportunities"] = [
                 c.get("text", "") for c in raw.get("structured_opportunities", [])
