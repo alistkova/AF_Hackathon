@@ -1,0 +1,11 @@
+{
+  "id": "ambiguous-data",
+  "payload": {
+    "request_id": "eval-12", "company": {"id": "magnit", "name": "Магнит", "industry": "", "region": ""},
+    "event": {"id": "e12", "title": "Неопределённое событие без явной связи с компанией"},
+    "evidence": [
+      {"source_id": "n12", "title": "Слух", "url": "https://n/12", "snippet": "Неподтверждённые слухи о сделке."}
+    ],
+    "locale": "ru", "mode": "live"
+  }
+}

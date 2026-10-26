@@ -1,0 +1,12 @@
+{
+  "id": "opportunity-alfa",
+  "payload": {
+    "request_id": "eval-11", "company": {"id": "magnit", "name": "Магнит", "industry": "Ритейл", "region": "Москва"},
+    "event": {"id": "e11", "title": "Потребительский спрос в ритейле вырос на 6% в сентябре"},
+    "evidence": [
+      {"source_id": "n11", "title": "Спрос", "url": "https://n/11", "snippet": "Рост потребительских расходов 6% г/г."},
+      {"source_id": "rag:ALFA-consumption.pdf:4:1", "title": "Consumption", "url": "rag://c", "snippet": "Альфа-Банк отмечает восстановление потребления."}
+    ],
+    "locale": "ru", "mode": "live"
+  }
+}

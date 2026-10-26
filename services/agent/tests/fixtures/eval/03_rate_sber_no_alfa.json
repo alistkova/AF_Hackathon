@@ -1,0 +1,11 @@
+{
+  "id": "rate-sber-no-alfa",
+  "payload": {
+    "request_id": "eval-03", "company": {"id": "sber", "name": "Сбер", "industry": "Банки", "region": "Москва"},
+    "event": {"id": "e03", "title": "ЦБ сохранил ключевую ставку 14%"},
+    "evidence": [
+      {"source_id": "n3", "title": "Ставка", "url": "https://n/3", "snippet": "Совет директоров ЦБ сохранил ставку на уровне 14%."}
+    ],
+    "locale": "ru", "mode": "live"
+  }
+}

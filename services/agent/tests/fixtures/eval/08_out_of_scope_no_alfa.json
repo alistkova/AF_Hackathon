@@ -1,0 +1,11 @@
+{
+  "id": "out-of-scope-no-alfa",
+  "payload": {
+    "request_id": "eval-08", "company": {"id": "magnit", "name": "Магнит", "industry": "Ритейл", "region": "Москва"},
+    "event": {"id": "e08", "title": "Открытие выставки современного искусства в Москве"},
+    "evidence": [
+      {"source_id": "n8", "title": "Выставка", "url": "https://n/8", "snippet": "В Москве открылась выставка."}
+    ],
+    "locale": "ru", "mode": "live"
+  }
+}

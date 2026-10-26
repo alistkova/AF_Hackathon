@@ -1,0 +1,12 @@
+{
+  "id": "offtopic-gold-irrelevant",
+  "payload": {
+    "request_id": "eval-07", "company": {"id": "magnit", "name": "Магнит", "industry": "Ритейл", "region": "Москва"},
+    "event": {"id": "e07", "title": "Магнит открыл новый склад в Туле"},
+    "evidence": [
+      {"source_id": "n7", "title": "Склад", "url": "https://n/7", "snippet": "Компания открыла распределительный центр."},
+      {"source_id": "rag:Gold_digest_August26.pdf:1:0", "title": "Gold", "url": "rag://g", "snippet": "Золото выросло до 2600 долларов за унцию."}
+    ],
+    "locale": "ru", "mode": "live"
+  }
+}

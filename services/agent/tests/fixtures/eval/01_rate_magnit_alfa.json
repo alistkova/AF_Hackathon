@@ -1,0 +1,12 @@
+{
+  "id": "rate-magnit-alfa",
+  "payload": {
+    "request_id": "eval-01", "company": {"id": "magnit", "name": "Магнит", "industry": "Ритейл", "region": "Москва"},
+    "event": {"id": "e01", "title": "ЦБ сохранил ключевую ставку на уровне 14%"},
+    "evidence": [
+      {"source_id": "n1", "title": "ЦБ сохранил ставку", "url": "https://n/1", "snippet": "Совет директоров ЦБ сохранил ключевую ставку на уровне 14% годовых."},
+      {"source_id": "rag:ALFA-Macro_Insights-Policy_Rate_11Sep.pdf:2:0", "title": "Policy Rate", "url": "rag://a", "snippet": "Риторика ЦБ стала жёстче, ставка останется высокой дольше ожидаемого."}
+    ],
+    "locale": "ru", "mode": "live"
+  }
+}

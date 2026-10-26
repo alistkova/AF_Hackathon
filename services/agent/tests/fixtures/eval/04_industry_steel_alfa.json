@@ -1,0 +1,12 @@
+{
+  "id": "industry-steel-alfa",
+  "payload": {
+    "request_id": "eval-04", "company": {"id": "severstal", "name": "Северсталь", "industry": "Металлургия", "region": "Вологодская область"},
+    "event": {"id": "e04", "title": "Цены на сталь выросли на 8% за квартал"},
+    "evidence": [
+      {"source_id": "n4", "title": "Steel prices", "url": "https://n/4", "snippet": "Мировые цены на горячекатаный прокат выросли на 8%."},
+      {"source_id": "rag:ALFA_Russian_Steels_1К21PreviewUpdate_15Apr2021.pdf:2:1", "title": "Steels", "url": "rag://s", "snippet": "Экспортёры стали выигрывают от роста цен, но чувствительны к логистике."}
+    ],
+    "locale": "ru", "mode": "live"
+  }
+}
