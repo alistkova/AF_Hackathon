@@ -176,6 +176,18 @@ function Workspace({ user, onUserChange, onLogout }: WorkspaceProps) {
                 Лента строится из новостей content-сервиса и ранжируется по профилю компании.
                 Разбор запускает агента отдельно, прогресс приходит по SSE.
               </p>
+              <div className="-mx-4 -mb-4 mt-3 flex gap-2 rounded-b-2xl border-t border-slate-200 bg-slate-50 px-4 py-2.5">
+                <span aria-hidden="true" className="text-[11px] leading-5">
+                  ⚠
+                </span>
+                <p className="text-[11px] leading-5 text-slate-500">
+                  <span className="font-semibold text-slate-600">
+                    Не является финансовой рекомендацией.
+                  </span>{" "}
+                  Материалы носят информационный характер и не являются индивидуальной
+                  инвестиционной рекомендацией.
+                </p>
+              </div>
             </div>
             {companyId && (
               <FeedFilters
